@@ -183,9 +183,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final c = ThemeTokens.of(context);
     final s = StartStore.I;
     final focus = s.todayFocus();
-    final schedule = s.openTasks().where((it) => it.dueTime > 0).toList()
+    final fid = focus?.id;
+    // 焦点任务不在下方列表重复出现：一次只做一件事，避免两套按钮。
+    final schedule = s.openTasks().where((it) => it.dueTime > 0 && it.id != fid).toList()
       ..sort((a, b) => a.dueTime.compareTo(b.dueTime));
-    final anytime = s.anytimeTasks();
+    final anytime = s.anytimeTasks().where((it) => it.id != fid).toList();
     final list = [...schedule, ...anytime];
     final remaining = list.length;
     final focusMin = s.todayFocusMinutes();
@@ -851,6 +853,7 @@ class HeroCard extends StatelessWidget {
             const SizedBox(height: S.md),
             if (!done) ...[
               Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   // 主钮：进专注。
                   Pressable(
@@ -864,20 +867,16 @@ class HeroCard extends StatelessWidget {
                       child: const Icon(Icons.play_arrow, size: 28, color: Colors.white),
                     ),
                   ),
-                  const SizedBox(width: S.sm),
                   _HeroAct(
                       icon: Icons.check,
                       onTap: () => _complete(context)),
-                  const SizedBox(width: S.xs),
                   _HeroAct(
                       icon: Icons.call_split,
                       onTap: () => Navigator.of(context, rootNavigator: true)
                           .pushNamed('/steps', arguments: focus.id)),
-                  const SizedBox(width: S.xs),
                   _HeroAct(
                       icon: Icons.edit_outlined,
                       onTap: () => showItemEditor(context, focus)),
-                  const Spacer(),
                   // 换一件：降低承诺压力，随时可以重新选。
                   _HeroAct(icon: Icons.swap_horiz, onTap: onPick),
                 ],

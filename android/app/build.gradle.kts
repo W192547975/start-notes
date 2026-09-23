@@ -23,11 +23,11 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.start.notes"
+        applicationId = "com.astart.app"
         minSdk = 26
         targetSdk = 34
         versionCode = flutter.versionCode
-        versionName = flutter.versionName
+        versionName = "2"
     }
 
     signingConfigs {

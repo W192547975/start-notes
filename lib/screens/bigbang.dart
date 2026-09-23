@@ -42,18 +42,29 @@ class _BigBangSheetState extends State<BigBangSheet> {
   Future<void> _editWord(int i) async {
     final c = ThemeTokens.of(context);
     final ctl = TextEditingController(text: _words[i]);
-    final v = await showStartDialog<String>(
-      context,
-      content: '',
-      title: '改这个词',
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: Text('算了', style: TextStyle(color: c.inkSoft))),
-        TextButton(
-          onPressed: () => Navigator.pop(context, ctl.text.trim()),
-          child: Text('好', style: TextStyle(color: c.accent, fontWeight: FontWeight.bold)),
+    final v = await showDialog<String>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: c.card,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(S.radius)),
+        title: Text('改这个词',
+            style: TextStyle(color: c.ink, fontSize: S.textLg, fontWeight: FontWeight.bold)),
+        content: TextField(
+          controller: ctl,
+          autofocus: true,
+          style: TextStyle(fontSize: S.textLg, color: c.ink),
+          cursorColor: c.accent,
         ),
-      ],
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: Text('算了', style: TextStyle(color: c.inkSoft))),
+          TextButton(
+            onPressed: () => Navigator.pop(context, ctl.text.trim()),
+            child: Text('好', style: TextStyle(color: c.accent, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
     );
+    ctl.dispose();
     if (v == null || !mounted) return;
     setState(() {
       if (v.isEmpty) {
@@ -62,6 +73,41 @@ class _BigBangSheetState extends State<BigBangSheet> {
       } else {
         _words[i] = v;
       }
+    });
+  }
+
+  /// 手动加一个词（拆不出词 / 短句场景直接补步骤）。
+  Future<void> _addWord() async {
+    final c = ThemeTokens.of(context);
+    final ctl = TextEditingController();
+    final v = await showDialog<String>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: c.card,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(S.radius)),
+        title: Text('加一步',
+            style: TextStyle(color: c.ink, fontSize: S.textLg, fontWeight: FontWeight.bold)),
+        content: TextField(
+          controller: ctl,
+          autofocus: true,
+          style: TextStyle(fontSize: S.textLg, color: c.ink),
+          cursorColor: c.accent,
+          decoration: InputDecoration(hintText: '写清楚这一步做什么', hintStyle: TextStyle(color: c.inkSoft)),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: Text('算了', style: TextStyle(color: c.inkSoft))),
+          TextButton(
+            onPressed: () => Navigator.pop(context, ctl.text.trim()),
+            child: Text('好', style: TextStyle(color: c.accent, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+    ctl.dispose();
+    if (v == null || v.isEmpty || !mounted) return;
+    setState(() {
+      _words.add(v);
+      _picked.add(_words.length - 1);
     });
   }
 
@@ -81,7 +127,7 @@ class _BigBangSheetState extends State<BigBangSheet> {
           ),
           const SizedBox(height: S.xs),
           Center(
-            child: Text('点一下取消选中，双击删掉，长按拖动换位置',
+            child: Text('点一下取消选中，双击删掉，长按改词，＋手动加',
                 style: TextStyle(fontSize: S.textSm, color: c.inkSoft)),
           ),
           const SizedBox(height: S.md),
@@ -113,6 +159,22 @@ class _BigBangSheetState extends State<BigBangSheet> {
               ),
             ),
           const SizedBox(height: S.md),
+          if (!_loading && _words.isNotEmpty)
+            Pressable(
+              onTap: _addWord,
+              child: Container(
+                height: 40,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: c.cardAlt,
+                  borderRadius: BorderRadius.circular(S.radius),
+                  border: Border.all(color: c.line),
+                ),
+                child: Text('＋ 手动加一步',
+                    style: TextStyle(color: c.inkSoft, fontSize: S.textMd, fontWeight: FontWeight.bold)),
+              ),
+            ),
+          const SizedBox(height: S.xs),
           if (!_loading && _words.isNotEmpty)
             Pressable(
               onTap: () {
@@ -228,6 +290,20 @@ Future<void> showBigBang(
     context,
     (_) => BigBangSheet(text: text, onDone: onDone, confirmLabel: confirmLabel),
   );
+}
+
+/// 把拆出的词存成任务小步骤（首页焦点卡与步骤页共用）。
+Future<void> saveKeptAsSteps(List<String> kept, Item task) async {
+  if (kept.isEmpty) return;
+  final now = DateTime.now().millisecondsSinceEpoch;
+  for (var k = 0; k < kept.length; k++) {
+    await StartStore.I.put(Item(
+        kind: Item.kindTask,
+        parentId: task.id,
+        title: kept[k],
+        rank: -1,
+        created: now + k));
+  }
 }
 
 /// 扇形菜单「捋一捋」入口：先输入一段话 → 大爆炸拆词 → 选中的词各存一条念头。
