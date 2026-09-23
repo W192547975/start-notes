@@ -54,3 +54,6 @@ keystore.properties
 
 # 构建产物
 Start-*-signed.apk
+
+*.apk
+android/build/

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'data/store.dart';
+import 'channels/native.dart';
 import 'screens/dump.dart';
 import 'screens/focus.dart';
 import 'screens/home.dart';
@@ -10,10 +12,19 @@ import 'screens/segment_screen.dart';
 import 'screens/stats.dart';
 import 'screens/steps.dart';
 import 'theme/tokens.dart';
+import 'utils/update_checker.dart';
 import 'widgets/ui.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // 全面屏：内容延伸到状态栏/手势条后面，系统栏全透明，界面用 SafeArea 让位。
+  await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+    statusBarColor: Colors.transparent,
+    systemNavigationBarColor: Colors.transparent,
+    systemNavigationBarDividerColor: Colors.transparent,
+    systemNavigationBarContrastEnforced: false,
+  ));
   await StartStore.I.init();
   runApp(const StartApp());
 }
@@ -33,6 +44,40 @@ class _StartAppState extends State<StartApp> {
   void initState() {
     super.initState();
     StartStore.I.addListener(_onChange);
+    // 启动后静默检查更新，有新版自动提醒。
+    Future.delayed(const Duration(seconds: 2), _autoUpdateCheck);
+  }
+
+  Future<void> _autoUpdateCheck() async {
+    final u = await UpdateChecker.check();
+    if (u == null || !mounted) return;
+    final ctx = StartApp.navigatorKey.currentContext;
+    if (ctx == null || !ctx.mounted) return;
+    final c = ThemeTokens.of(ctx);
+    await showDialog<void>(
+      context: ctx,
+      builder: (_) => AlertDialog(
+        backgroundColor: c.card,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(S.radius)),
+        title: Text('发现新版本 v${u.version}',
+            style: TextStyle(color: c.ink, fontSize: S.textLg, fontWeight: FontWeight.bold)),
+        content: Text('去仓库下载最新安装包',
+            style: TextStyle(color: c.inkSoft, fontSize: S.textMd)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('忽略', style: TextStyle(color: c.inkSoft)),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              Native.openUrl(u.url);
+            },
+            child: Text('下载', style: TextStyle(color: c.accent, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
   }
 
   void _onChange() {
@@ -60,9 +105,9 @@ class _StartAppState extends State<StartApp> {
         final scale = s.prefDouble('font_scale', 1.0);
         final platformDark =
             WidgetsBinding.instance.platformDispatcher.platformBrightness == Brightness.dark;
-        final c = (themeMode == ThemeMode.dark || (themeMode == ThemeMode.system && platformDark))
-            ? C.dark
-            : C.light;
+        final isDark =
+            themeMode == ThemeMode.dark || (themeMode == ThemeMode.system && platformDark);
+        final c = isDark ? C.dark : C.light;
 
         return ThemeTokens(
           c: c,
@@ -76,12 +121,24 @@ class _StartAppState extends State<StartApp> {
             themeMode: themeMode,
             builder: (context, child) => MediaQuery(
               data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(scale)),
-              // 全局撤销条：挂在 navigator 之上，任何页面（含根导航推入页）都能弹撤回。
-              child: Stack(
-                children: [
-                  child!,
-                  const UndoHost(),
-                ],
+              // 全面屏：状态栏/手势条图标色随明暗主题。
+              child: AnnotatedRegion<SystemUiOverlayStyle>(
+                value: SystemUiOverlayStyle(
+                  statusBarColor: Colors.transparent,
+                  statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
+                  systemNavigationBarColor: Colors.transparent,
+                  systemNavigationBarIconBrightness:
+                      isDark ? Brightness.light : Brightness.dark,
+                  systemNavigationBarDividerColor: Colors.transparent,
+                  systemNavigationBarContrastEnforced: false,
+                ),
+                // 全局撤销条：挂在 navigator 之上，任何页面（含根导航推入页）都能弹撤回。
+                child: Stack(
+                  children: [
+                    child!,
+                    const UndoHost(),
+                  ],
+                ),
               ),
             ),
             home: const EulaGate(child: Root()),
@@ -127,7 +184,7 @@ class _EulaGateState extends State<EulaGate> {
   @override
   Widget build(BuildContext context) {
     if (_ok == true) return widget.child;
-    return ManualScreen(asDialog: true, onAccept: () async {
+    return FirstRunScreen(onAccept: () async {
       await StartStore.I.setPref('eula_accepted_version', StartStore.eulaVersion);
       setState(() => _ok = true);
     });

@@ -9,7 +9,7 @@ class UpdateChecker {
   // GitHub: https://api.github.com/repos/{owner}/{repo}/releases/latest
   static const _url =
       'https://gitee.com/api/v5/repos/dubwhr/astart/releases/latest';
-  static const current = '1.0.0';
+  static const current = '2';
 
   /// 返回 null=无更新或检查失败；非 null=有新版本（version + 下载地址）
   static Future<({String version, String url})?> check() async {

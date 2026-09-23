@@ -12,8 +12,12 @@ class SettingsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = ThemeTokens.of(context);
-    final s = StartStore.I;
+    // 监听 store：任何设置项变化立即重建，选中态/开关/滑块实时刷新。
+    return ListenableBuilder(
+      listenable: StartStore.I,
+      builder: (context, _) {
+        final c = ThemeTokens.of(context);
+        final s = StartStore.I;
 
     return Scaffold(
       backgroundColor: c.paper,
@@ -71,16 +75,46 @@ class SettingsScreen extends StatelessWidget {
               onTap: () => Navigator.of(context, rootNavigator: true)
                   .push(MaterialPageRoute(builder: (_) => const ManualScreen())),
             ),
+            _NavTile(
+              icon: Icons.description_outlined,
+              title: '用户协议',
+              onTap: () => Navigator.of(context, rootNavigator: true)
+                  .push(MaterialPageRoute(builder: (_) => const AgreeScreen(privacy: false))),
+            ),
+            _NavTile(
+              icon: Icons.privacy_tip_outlined,
+              title: '隐私政策',
+              onTap: () => Navigator.of(context, rootNavigator: true)
+                  .push(MaterialPageRoute(builder: (_) => const AgreeScreen(privacy: true))),
+            ),
+            _NavTile(
+              icon: Icons.gavel_outlined,
+              title: '开源协议',
+              onTap: () => Navigator.of(context, rootNavigator: true)
+                  .push(MaterialPageRoute(builder: (_) => const LicenseScreen())),
+            ),
+            _NavTile(
+              icon: Icons.code,
+              title: '项目源码',
+              onTap: () => Native.openUrl('https://gitee.com/dubwhr/astart'),
+            ),
+            _NavTile(
+              icon: Icons.mail_outline,
+              title: '联系作者',
+              onTap: () => Native.openUrl('mailto:3210819895@qq.com'),
+            ),
             Padding(
               padding: const EdgeInsets.all(S.sm),
               child: Center(
-                child: Text('Start 3.0 · 本应用对个人非商业使用永久免费',
+                child: Text('Start',
                     style: TextStyle(fontSize: S.textSm, color: c.inkSoft)),
               ),
             ),
           ],
         ),
       ),
+    );
+      },
     );
   }
 }
