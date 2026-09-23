@@ -1,0 +1,229 @@
+import 'package:flutter/material.dart';
+
+import '../channels/native.dart';
+import '../theme/tokens.dart';
+import '../widgets/ui.dart';
+
+/// 捋一捋 · 大爆炸拆词浮层。
+/// 词芯片默认全选（番茄红底），单击取消选择，双击删词，铅笔编辑，长按拖动换位。
+class BigBangSheet extends StatefulWidget {
+  final String text;
+  final String confirmLabel;
+  final ValueChanged<List<String>> onDone;
+  const BigBangSheet({super.key, required this.text, required this.onDone, this.confirmLabel = '就这样'});
+
+  @override
+  State<BigBangSheet> createState() => _BigBangSheetState();
+}
+
+class _BigBangSheetState extends State<BigBangSheet> {
+  List<String> _words = [];
+  Set<int> _picked = {};
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _segment();
+  }
+
+  Future<void> _segment() async {
+    final w = await Native.words(widget.text);
+    if (!mounted) return;
+    setState(() {
+      _words = w;
+      _picked = {for (var i = 0; i < w.length; i++) i};
+      _loading = false;
+    });
+  }
+
+  Future<void> _editWord(int i) async {
+    final c = ThemeTokens.of(context);
+    final ctl = TextEditingController(text: _words[i]);
+    final v = await showStartDialog<String>(
+      context,
+      content: '',
+      title: '改这个词',
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: Text('算了', style: TextStyle(color: c.inkSoft))),
+        TextButton(
+          onPressed: () => Navigator.pop(context, ctl.text.trim()),
+          child: Text('好', style: TextStyle(color: c.accent, fontWeight: FontWeight.bold)),
+        ),
+      ],
+    );
+    if (v == null || !mounted) return;
+    setState(() {
+      if (v.isEmpty) {
+        _words.removeAt(i);
+        _picked = _picked.map((e) => e > i ? e - 1 : e).toSet();
+      } else {
+        _words[i] = v;
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeTokens.of(context);
+    final pad = MediaQuery.of(context).viewInsets.bottom;
+    return Padding(
+      padding: EdgeInsets.only(left: S.md, right: S.md, top: S.lg, bottom: pad + S.md),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Center(
+            child: Text('捋一捋',
+                style: TextStyle(fontSize: S.textLg, fontWeight: FontWeight.bold, color: c.ink)),
+          ),
+          const SizedBox(height: S.xs),
+          Center(
+            child: Text('点一下取消选中，双击删掉，长按拖动换位置',
+                style: TextStyle(fontSize: S.textSm, color: c.inkSoft)),
+          ),
+          const SizedBox(height: S.md),
+          if (_loading)
+            const Padding(
+              padding: EdgeInsets.all(S.lg),
+              child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+            )
+          else if (_words.isEmpty)
+            Padding(
+              padding: const EdgeInsets.all(S.lg),
+              child: Center(child: Text('没拆出词', style: TextStyle(color: c.inkSoft))),
+            )
+          else
+            Flexible(
+              child: SingleChildScrollView(
+                child: _ChipWrap(
+                  words: _words,
+                  picked: _picked,
+                  onTap: (i) => setState(() {
+                    _picked.contains(i) ? _picked.remove(i) : _picked.add(i);
+                  }),
+                  onDoubleTap: (i) => setState(() {
+                    _words.removeAt(i);
+                    _picked = _picked.where((e) => e < i || e > i).toSet();
+                  }),
+                  onLongPress: _editWord,
+                ),
+              ),
+            ),
+          const SizedBox(height: S.md),
+          if (!_loading && _words.isNotEmpty)
+            Pressable(
+              onTap: () {
+                final kept = <String>[];
+                final idx = _picked.toList()..sort();
+                for (final i in idx) {
+                  kept.add(_words[i]);
+                }
+                widget.onDone(kept);
+              },
+              child: Container(
+                height: 48,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(color: c.accent, borderRadius: BorderRadius.circular(S.radius)),
+                child: Text('${widget.confirmLabel}（已选 ${_picked.length}/${_words.length}）',
+                    style: const TextStyle(
+                        color: Colors.white, fontSize: S.textMd, fontWeight: FontWeight.bold)),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 可拖动换位的词芯片流。
+class _ChipWrap extends StatelessWidget {
+  final List<String> words;
+  final Set<int> picked;
+  final void Function(int) onTap;
+  final void Function(int) onDoubleTap;
+  final void Function(int) onLongPress;
+
+  const _ChipWrap({
+    required this.words,
+    required this.picked,
+    required this.onTap,
+    required this.onDoubleTap,
+    required this.onLongPress,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeTokens.of(context);
+    return Wrap(
+      spacing: S.xs,
+      runSpacing: S.xs,
+      children: [
+        for (var i = 0; i < words.length; i++)
+          DragTarget<int>(
+            onWillAcceptWithDetails: (d) => d.data != i,
+            onAcceptWithDetails: (d) {
+              final from = d.data;
+              final w = words.removeAt(from);
+              words.insert(i.clamp(0, words.length), w);
+              // 重排选择集
+              final np = <int>{};
+              for (final p in picked) {
+                np.add(p == from ? i : (p >= i && p < from ? p + 1 : (p <= i && p > from ? p - 1 : p)));
+              }
+              picked
+                ..clear()
+                ..addAll(np);
+            },
+            builder: (_, __, ___) => Draggable<int>(
+              data: i,
+              feedback: _chip(context, c, i, lifted: true),
+              childWhenDragging: Opacity(opacity: 0.3, child: _chip(context, c, i)),
+              child: _chip(context, c, i),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _chip(BuildContext context, C c, int i, {bool lifted = false}) {
+    final on = picked.contains(i);
+    return Pressable(
+      onTap: () => onTap(i),
+      onDoubleTap: () => onDoubleTap(i),
+      onLongPress: () => onLongPress(i),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: S.sm, vertical: S.xs),
+        decoration: BoxDecoration(
+          color: on ? c.accent : c.card,
+          borderRadius: BorderRadius.circular(S.sm),
+          border: Border.all(color: on ? c.accent : c.line),
+          boxShadow: lifted
+              ? [BoxShadow(color: Colors.black.withValues(alpha: 0.2), blurRadius: 8)]
+              : null,
+        ),
+        child: Text(
+          words[i],
+          style: TextStyle(
+            fontSize: S.textMd,
+            fontWeight: FontWeight.bold,
+            color: on ? Colors.white : c.ink,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 打开大爆炸浮层（供念头/步骤共用）。
+Future<void> showBigBang(
+  BuildContext context,
+  String text, {
+  required ValueChanged<List<String>> onDone,
+  String confirmLabel = '就这样',
+}) {
+  return showStartSheet(
+    context,
+    (_) => BigBangSheet(text: text, onDone: onDone, confirmLabel: confirmLabel),
+  );
+}
