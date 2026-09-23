@@ -13,7 +13,7 @@ class StartStore extends ChangeNotifier {
   static final StartStore I = StartStore._();
 
   static const fileJson = 'start_items.json';
-  static const eulaVersion = 5;
+  static const eulaVersion = 6;
 
   final List<Item> items = [];
   int seq = 1;
@@ -103,6 +103,13 @@ class StartStore extends ChangeNotifier {
         ..addAll(parsed);
       seq = maxSeq;
       await persist();
+      for (final it in items) {
+        if (it.kind == Item.kindTask && !it.done && it.dueTime > 0) {
+          await Native.scheduleNotify(it.id, it.alarmLabel, it.dueTime);
+        } else {
+          await Native.cancelNotify(it.id);
+        }
+      }
       notifyListeners();
       return true;
     } catch (_) {
@@ -137,18 +144,31 @@ class StartStore extends ChangeNotifier {
     return m;
   }
 
-  /// 新增或更新：补 id/时间戳，完成态维护 completedAt。
+  /// 新增或更新：新条目必须入库（items.add），同 id 不同实例则整体替换。
+  /// 完成态维护 completedAt。
   Future<void> put(Item it, {bool touchRank = false}) async {
     final now = DateTime.now().millisecondsSinceEpoch;
-    if (it.id <= 0 || byId(it.id) == null) {
+    final existing = it.id > 0 ? byId(it.id) : null;
+    if (existing == null) {
       it.id = seq++;
       it.created = now;
       if (touchRank) it.rank = _minRank() - 1;
+      items.add(it);
+    } else if (!identical(existing, it)) {
+      it.id = existing.id;
+      it.created = existing.created;
+      items[items.indexOf(existing)] = it;
     }
     it.updated = now;
     if (it.done && it.completedAt == 0) it.completedAt = now;
     if (!it.done) it.completedAt = 0;
     await persist();
+    // 到点提醒：日程任务未完成且有时间 → 定时悬浮通知；否则撤销。
+    if (it.kind == Item.kindTask && !it.done && it.dueTime > 0 && prefBool('notify_on', true)) {
+      await Native.scheduleNotify(it.id, it.alarmLabel, it.dueTime);
+    } else {
+      await Native.cancelNotify(it.id);
+    }
     notifyListeners();
   }
 
@@ -168,6 +188,9 @@ class StartStore extends ChangeNotifier {
 
     rec(id);
     persist();
+    for (final it in removed) {
+      Native.cancelNotify(it.id);
+    }
     notifyListeners();
     return removed;
   }
@@ -178,6 +201,11 @@ class StartStore extends ChangeNotifier {
       if (it.id >= seq) seq = it.id + 1;
     }
     await persist();
+    for (final it in snapshot) {
+      if (it.kind == Item.kindTask && !it.done && it.dueTime > 0) {
+        await Native.scheduleNotify(it.id, it.alarmLabel, it.dueTime);
+      }
+    }
     notifyListeners();
   }
 
@@ -190,6 +218,7 @@ class StartStore extends ChangeNotifier {
         if (it != null && !it.done) {
           it.done = true;
           it.completedAt = DateTime.now().millisecondsSinceEpoch;
+          await Native.cancelNotify(id);
         }
       } else {
         delete(id);
@@ -224,7 +253,7 @@ class StartStore extends ChangeNotifier {
     final timed = <Item>[];
     final anytime = <Item>[];
     for (final it in items) {
-      if (it.isIdea || it.done || it.parentId != 0) continue;
+      if (it.isIdea || it.isInbox || it.done || it.parentId != 0) continue;
       if (it.dueTime > 0) {
         timed.add(it);
       } else {
@@ -240,8 +269,15 @@ class StartStore extends ChangeNotifier {
   List<Item> anytimeTasks() {
     final r = <Item>[];
     for (final it in items) {
-      if (!it.isIdea && !it.done && it.parentId == 0 && it.dueTime == 0) r.add(it);
+      if (!it.isIdea && !it.isInbox && !it.done && it.parentId == 0 && it.dueTime == 0) r.add(it);
     }
+    _sortByRank(r);
+    return r;
+  }
+
+  /// 动手吧暂存：待捋一捋分类的条目（语音/手动倾倒进来）。
+  List<Item> inboxTasks() {
+    final r = items.where((it) => it.isInbox && it.parentId == 0).toList();
     _sortByRank(r);
     return r;
   }
@@ -295,7 +331,11 @@ class StartStore extends ChangeNotifier {
     if (day != epochDay() || id <= 0) return null;
     final it = byId(id);
     if (it == null || it.isIdea) {
-      clearFocus();
+      // 过期焦点静默清理：不 notify（调用方多在 build 期读取，notify 会打断构建）。
+      prefs.remove('focus_of_day');
+      prefs.remove('focus_of_day_id');
+      Prefs.set('focus_of_day', null);
+      Prefs.set('focus_of_day_id', null);
       return null;
     }
     return it;

@@ -1,14 +1,43 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- 本应用不联网：不申请 INTERNET 权限 -->
+    <!-- 联网：Vosk 模型首次下载 + 检查更新 -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
+    <!-- 语音记录（闪念胶囊）：离线 SpeechRecognizer，不联网 -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- 读取手机日历事件并入首页时间线（老版 TodayScreen 行为） -->
+    <uses-permission android:name="android.permission.READ_CALENDAR" />
+    <!-- 到点提醒：悬浮通知（Android 13+ 运行时申请）+ 精确闹钟 + 开机重排 + 常驻保活 -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <queries>
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
         </intent>
-        <!-- 系统时钟（二期专注闹钟跳转用） -->
+        <!-- 任意门：拨号 -->
+        <intent>
+            <action android:name="android.intent.action.DIAL" />
+            <data android:scheme="tel" />
+        </intent>
+        <!-- 任意门：打开链接 -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="http" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+        <!-- 绑定手机日历 -->
+        <intent>
+            <action android:name="android.intent.action.INSERT" />
+            <data android:mimeType="vnd.android.cursor.dir/event" />
+        </intent>
+        <!-- 系统闹钟提醒 -->
         <intent>
             <action android:name="android.intent.action.SET_ALARM" />
         </intent>
@@ -53,6 +82,13 @@
                 <data android:mimeType="text/plain" />
             </intent-filter>
         </activity>
+        <!-- 到点提醒广播 + 开机重排闹钟（只收 protected 系统广播，exported=false 即可） -->
+        <receiver android:name=".ReminderReceiver" android:exported="false" />
+        <receiver android:name=".BootReceiver" android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

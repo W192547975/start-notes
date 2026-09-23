@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../channels/native.dart';
+import '../data/item.dart';
+import '../data/store.dart';
 import '../theme/tokens.dart';
 import '../widgets/ui.dart';
 
@@ -226,4 +228,83 @@ Future<void> showBigBang(
     context,
     (_) => BigBangSheet(text: text, onDone: onDone, confirmLabel: confirmLabel),
   );
+}
+
+/// 扇形菜单「捋一捋」入口：先输入一段话 → 大爆炸拆词 → 选中的词各存一条念头。
+/// 体现「先动手（存）再捋一捋（拆）」：动手吧负责倾倒，捋一捋负责把一条念头炸开成多条。
+Future<void> showBigBangFromInput(BuildContext context, {String initial = ''}) async {
+  final ctl = TextEditingController(text: initial);
+  final text = await showStartSheet<String>(
+    context,
+    (_) => Padding(
+      padding: EdgeInsets.only(
+        left: S.md,
+        right: S.md,
+        top: S.lg,
+        bottom: MediaQuery.of(context).viewInsets.bottom + S.md,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text('捋一捋',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                  fontSize: S.textLg, fontWeight: FontWeight.bold, color: ThemeTokens.of(context).ink)),
+          const SizedBox(height: S.xs),
+          Text('把一段话粘进来，炸成词，挑着留下',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: S.textSm, color: ThemeTokens.of(context).inkSoft)),
+          const SizedBox(height: S.md),
+          TextField(
+            controller: ctl,
+            autofocus: true,
+            minLines: 2,
+            maxLines: 6,
+            style: TextStyle(fontSize: S.textLg, color: ThemeTokens.of(context).ink),
+            decoration: InputDecoration(
+              hintText: '想拆开的话…',
+              hintStyle: TextStyle(color: ThemeTokens.of(context).inkSoft),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(S.radius),
+                borderSide: BorderSide(color: ThemeTokens.of(context).line),
+              ),
+            ),
+          ),
+          const SizedBox(height: S.md),
+          Pressable(
+            onTap: () => Navigator.pop(context, ctl.text.trim()),
+            child: Container(
+              height: 48,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                  color: ThemeTokens.of(context).accent,
+                  borderRadius: BorderRadius.circular(S.radius)),
+              child: const Text('炸开',
+                  style: TextStyle(color: Colors.white, fontSize: S.textMd, fontWeight: FontWeight.bold)),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+  ctl.dispose();
+  if (text == null || text.isEmpty || !context.mounted) return;
+  await showBigBang(context, text, confirmLabel: '拆成念头', onDone: (kept) async {
+    if (kept.isEmpty) return;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final added = <int>[];
+    for (var k = 0; k < kept.length; k++) {
+      final it = Item(kind: Item.kindIdea, title: kept[k], rank: -1, created: now + k);
+      await StartStore.I.put(it, touchRank: true);
+      added.add(it.id);
+    }
+    if (context.mounted) {
+      UndoHost.show(context, '炸成 ${kept.length} 条念头', () async {
+        for (final id in added) {
+          StartStore.I.delete(id, cascade: false);
+        }
+      });
+    }
+  });
 }

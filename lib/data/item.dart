@@ -2,6 +2,7 @@
 /// JSON 字段与老版 start_items.json 完全一致。
 class Item {
   static const int kindTask = 0;
+  static const int kindInbox = 1; // 动手吧暂存：语音/手动倾倒进来，待捋一捋分类
   static const int kindIdea = 2;
 
   int id;
@@ -38,6 +39,7 @@ class Item {
   });
 
   bool get isIdea => kind == kindIdea;
+  bool get isInbox => kind == kindInbox;
   bool get isEmpty => title.trim().isEmpty && note.trim().isEmpty;
 
   String get alarmLabel {
@@ -50,7 +52,9 @@ class Item {
 
   factory Item.fromJson(Map<String, dynamic> j) => Item(
         id: _l(j['id']),
-        kind: _l(j['kind']) == kindIdea ? kindIdea : kindTask,
+        kind: _l(j['kind']) == kindIdea
+            ? kindIdea
+            : (_l(j['kind']) == kindInbox ? kindInbox : kindTask),
         parentId: _l(j['parent']),
         title: j['title'] as String? ?? '',
         note: j['note'] as String? ?? '',

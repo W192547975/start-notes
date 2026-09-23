@@ -12,7 +12,8 @@ import '../widgets/ui.dart';
 /// 专注：空心圆环 + 倒计时数字，无多余文本。Ticker 驱动，250ms 平滑刷新。
 class FocusScreen extends StatefulWidget {
   final int? taskId;
-  const FocusScreen({super.key, this.taskId});
+  final bool showBack;
+  const FocusScreen({super.key, this.taskId, this.showBack = true});
 
   @override
   State<FocusScreen> createState() => _FocusScreenState();
@@ -139,13 +140,13 @@ class _FocusScreenState extends State<FocusScreen> {
   Widget _buildSetup(C c, StartStore s) {
     return Column(
       children: [
-        _TopBar(onBack: () => Navigator.pop(context)),
+        _TopBar(onBack: widget.showBack ? () => Navigator.pop(context) : null),
         Expanded(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Text(
-                _task?.title ?? '选一件事，只做它',
+                _task?.title ?? '只做一件事',
                 maxLines: 2,
                 textAlign: TextAlign.center,
                 overflow: TextOverflow.ellipsis,
@@ -198,13 +199,13 @@ class _FocusScreenState extends State<FocusScreen> {
               ),
               const SizedBox(height: S.lg),
               Pressable(
-                onTap: _task == null ? null : _start,
+                onTap: _start,
                 child: Container(
                   width: 72,
                   height: 72,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: _task == null ? c.cardAlt : c.accent,
+                    color: c.accent,
                   ),
                   child: const Icon(Icons.play_arrow, color: Colors.white, size: 36),
                 ),
@@ -276,8 +277,8 @@ class _FocusScreenState extends State<FocusScreen> {
 }
 
 class _TopBar extends StatelessWidget {
-  final VoidCallback onBack;
-  const _TopBar({required this.onBack});
+  final VoidCallback? onBack;
+  const _TopBar({this.onBack});
 
   @override
   Widget build(BuildContext context) {
@@ -286,7 +287,10 @@ class _TopBar extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(S.md, S.sm, S.md, 0),
       child: Row(
         children: [
-          IconBtn(Icons.arrow_back, onTap: onBack, color: c.ink),
+          if (onBack != null)
+            IconBtn(Icons.arrow_back, onTap: onBack, color: c.ink)
+          else
+            const SizedBox(width: 40),
           const Spacer(),
           Icon(Icons.timer_outlined, color: c.inkSoft),
         ],

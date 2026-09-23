@@ -9,7 +9,12 @@ class StatsScreen extends StatelessWidget {
   const StatsScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => ListenableBuilder(
+        listenable: StartStore.I,
+        builder: (context, _) => _build(context),
+      );
+
+  Widget _build(BuildContext context) {
     final c = ThemeTokens.of(context);
     final s = StartStore.I;
     final last7 = s.focusMinutesLast7();
@@ -18,14 +23,8 @@ class StatsScreen extends StatelessWidget {
       child: ListView(
         padding: const EdgeInsets.all(S.md),
         children: [
-          Row(
-            children: [
-              Text('统计',
-                  style: TextStyle(fontSize: S.textXl, fontWeight: FontWeight.bold, color: c.ink)),
-              const Spacer(),
-              Icon(Icons.align_horizontal_left_outlined, color: c.inkSoft),
-            ],
-          ),
+          Text('统计',
+              style: TextStyle(fontSize: S.textXl, fontWeight: FontWeight.bold, color: c.ink)),
           const SizedBox(height: S.md),
           Row(
             children: [

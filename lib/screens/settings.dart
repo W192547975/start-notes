@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
+import '../channels/native.dart';
 import '../data/store.dart';
 import '../theme/tokens.dart';
+import '../utils/update_checker.dart';
 import '../widgets/ui.dart';
 import 'manual.dart';
-import 'timetable_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -45,18 +45,26 @@ class SettingsScreen extends StatelessWidget {
             ),
             _NotifyModeTile(),
             _VolumeTile(),
-            _Group(c, label: '课表'),
-            _NavTile(
-              icon: Icons.calendar_today_outlined,
-              title: '课表',
-              onTap: () => Navigator.of(context, rootNavigator: true)
-                  .push(MaterialPageRoute(builder: (_) => const TimetableScreen())),
+            _Group(c, label: '后台保活'),
+            _SwitchTile(
+              title: '常驻通知防误杀',
+              value: s.prefBool('keep_alive', true),
+              onChanged: (v) {
+                s.setPref('keep_alive', v);
+                Native.setKeepAlive(v);
+              },
+            ),
+            _SwitchTile(
+              title: '到点悬浮提醒',
+              value: s.prefBool('notify_on', true),
+              onChanged: (v) => s.setPref('notify_on', v),
             ),
             _Group(c, label: '数据（全在本机）'),
             _ExportTile(),
             _ImportTile(),
             _ClearTile(),
             _Group(c, label: '关于'),
+            _UpdateTile(),
             _NavTile(
               icon: Icons.menu_book_outlined,
               title: '说明书',
@@ -338,16 +346,17 @@ class _ExportTile extends StatelessWidget {
     final c = ThemeTokens.of(context);
     return _Row(
       child: Pressable(
-        onTap: () {
-          final json = StartStore.I.exportJson();
-          Clipboard.setData(ClipboardData(text: json));
-          UndoHost.show(context, '全部数据已复制到剪贴板，粘到别处保存', () {});
+        onTap: () async {
+          final ok = await FileApi.export(StartStore.I.exportJson());
+          if (context.mounted) {
+            UndoHost.show(context, ok ? '已导出到文件' : '取消了', () {});
+          }
         },
         child: Row(
           children: [
             Icon(Icons.file_upload_outlined, size: 20, color: c.ink),
             const SizedBox(width: S.sm),
-            Text('导出：复制到剪贴板', style: TextStyle(fontSize: S.textMd, color: c.ink)),
+            Text('导出数据', style: TextStyle(fontSize: S.textMd, color: c.ink)),
           ],
         ),
       ),
@@ -362,24 +371,12 @@ class _ImportTile extends StatelessWidget {
     return _Row(
       child: Pressable(
         onTap: () async {
-          final ctl = TextEditingController();
-          final ok = await showStartDialog<bool>(
-            context,
-            title: '导入：粘贴之前导出的内容',
-            content: '',
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(context, false), child: Text('算了')),
-              TextButton(
-                  onPressed: () => Navigator.pop(context, true),
-                  child: Text('导入', style: TextStyle(color: c.accent))),
-            ],
-          );
-          if (ok != true || !context.mounted) return;
-          final text = ctl.text;
+          final text = await FileApi.import();
+          if (text == null || text.isEmpty) return;
           final snap = StartStore.I.exportJson();
           final r = await StartStore.I.restoreJson(text);
           if (context.mounted) {
-            UndoHost.show(context, r ? '已导入' : '内容不对，没导入',
+            UndoHost.show(context, r ? '已导入' : '文件内容不对，没导入',
                 () async => StartStore.I.restoreJson(snap));
           }
         },
@@ -387,11 +384,68 @@ class _ImportTile extends StatelessWidget {
           children: [
             Icon(Icons.file_download_outlined, size: 20, color: c.ink),
             const SizedBox(width: S.sm),
-            Text('导入：粘贴恢复', style: TextStyle(fontSize: S.textMd, color: c.ink)),
+            Text('导入数据', style: TextStyle(fontSize: S.textMd, color: c.ink)),
           ],
         ),
       ),
     );
+  }
+}
+
+class _UpdateTile extends StatefulWidget {
+  @override
+  State<_UpdateTile> createState() => _UpdateTileState();
+}
+
+class _UpdateTileState extends State<_UpdateTile> {
+  bool _checking = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeTokens.of(context);
+    return _Row(
+      child: Pressable(
+        onTap: _checking ? null : _check,
+        child: Row(
+          children: [
+            Icon(_checking ? Icons.sync_outlined : Icons.system_update_outlined,
+                size: 20, color: c.ink),
+            const SizedBox(width: S.sm),
+            Text(_checking ? '检查中…' : '检查更新',
+                style: TextStyle(fontSize: S.textMd, color: c.ink)),
+            const Spacer(),
+            Text('v${UpdateChecker.current}',
+                style: TextStyle(
+                    fontSize: S.textSm,
+                    color: c.inkSoft,
+                    fontFeatures: const [FontFeature.tabularFigures()])),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _check() async {
+    setState(() => _checking = true);
+    final r = await UpdateChecker.check();
+    if (!mounted) return;
+    setState(() => _checking = false);
+    if (r == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('已是最新版')),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('发现新版本 v${r.version}'),
+          action: r.url.isNotEmpty
+              ? SnackBarAction(
+                  label: '下载', onPressed: () => Native.openUrl(r.url))
+              : null,
+        ),
+      );
+    }
   }
 }
 
@@ -405,7 +459,7 @@ class _ClearTile extends StatelessWidget {
           final ok = await showStartDialog<bool>(
             context,
             title: '清空全部？',
-            content: '清空前会自动留一份快照，6 秒内可撤销。',
+            content: '',
             actions: [
               TextButton(onPressed: () => Navigator.pop(context, false), child: Text('再想想')),
               TextButton(

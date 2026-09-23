@@ -1,17 +1,46 @@
-# start
+# Start · V1
 
-A new Flutter project.
+把待办和念头**拆成小步骤**、帮你**一次只做好一件事**的本地记事工具。为 ADHD 人群设计，措辞鼓励、低阻力、不责备。
 
-## Getting Started
+> **关于作者**：Start 由个人开发者 **王浩然** 开发。开发者不懂程序代码，本应用**全程由 AI 编译**。
+>
+> **关于交互**：Start 的交互逻辑参考了 **Smartisan OS（锤子科技）** 的经典设计——闪念胶囊、大爆炸、一步，取其精华，以现代移动端的方式重新演绎，作为对那个「工匠时代」的致敬。
 
-This project is a starting point for a Flutter application.
+## 基础功能
 
-A few resources to get you started if this is your first Flutter project:
+- **念头**：心里冒出什么随手丢进来，单击拆词、双击删除、长按多选、铅笔编辑
+- **开始**：一股脑全写下来，自动按行和句末标点拆成几件，倒进来再慢慢整理
+- **捋一捋**：暂存逐条分类为念头 / 日程 / 随手做，支持批量操作与全选
+- **随手做**：没有时间的事都待在这，可拖动排序、长按设为今日焦点
+- **日程**：定时间的任务按时间线排列，过期不改红、不责备，只安静标出日期
+- **专注**：空心圆环倒计时，滴答声 / 提示方式 / 音量均可自定义
+- **统计**：完成数与专注分钟，看得见自己的进展
+- **搜索 / 设置 / 导入导出**：数据一个文件，随时带走
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+## 特色功能
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+- **今日焦点**：一屏一事，大按钮直接进专注，完成就地有鼓励
+- **思维导图**：捋一捋内置，点按选中、加子枝、按住拖动自由摆放
+- **拆词**：按词单元拆分（ICU 词典分词），词、句、混写自动分辨
+- **全局撤回**：任何删除都有 6 秒撤销，防误删
+- **到点悬浮提醒**：日程到时间弹横幅，精准闹钟、重启不丢
+- **后台保活**：常驻通知防误杀，自启动重排提醒，设置里可开关
+- **纯图标界面**：无文字按钮，番茄红点缀，数字严格对齐
+
+## 下载
+
+- Releases：https://gitee.com/dubwhr/astart/releases
+- 安装包：`Start-V1-signed.apk`（RSA 2048，v2+v3 签名校验）
+- 升级：versionCode 301，可从 3.0（300）直接覆盖安装，数据自动继承
+
+## 技术与隐私
+
+- Flutter 构建，包名 `com.start.notes`，最低 Android 8.0
+- 数据仅存设备本地，无账户、无广告、无统计 SDK
+- 唯一联网行为：检查更新（访问 Gitee 公开接口，不携带任何个人数据）
+
+## 开源
+
+本项目以 **GPLv3** 开源（见 [LICENSE](LICENSE)）。**本应用对个人非商业使用永久免费，商业使用需开发者的书面授权。**
+
+── 工匠的骄傲与喜悦 · PRIDE & JOY ──

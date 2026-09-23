@@ -22,7 +22,12 @@ class _StepsScreenState extends State<StepsScreen> {
   Item? get _task => StartStore.I.byId(widget.taskId);
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => ListenableBuilder(
+        listenable: StartStore.I,
+        builder: (context, _) => _build(context),
+      );
+
+  Widget _build(BuildContext context) {
     final c = ThemeTokens.of(context);
     final s = StartStore.I;
     final task = _task;

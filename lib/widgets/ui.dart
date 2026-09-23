@@ -1,3 +1,7 @@
+// ── 工匠的骄傲与喜悦 · Artisan's Pride & Joy ──
+// 致敬 Smartisan OS：
+//   闪念胶囊 → 念头 · 大爆炸 → 捋一捋 · 一步 → 开始
+// 把每一个细节较真到底，是这件小东西全部的骄傲与喜悦。
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -276,6 +280,45 @@ class IconBtn extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(S.xs),
         child: Icon(icon, size: 24, color: color ?? c.ink),
+      ),
+    );
+  }
+}
+
+/// 统一页头：返回箭头（可选）+ 标题 + 计数（等宽数字）+ 右侧动作区。
+class PageHead extends StatelessWidget {
+  final String title;
+  final int count; // -1 = 不显示
+  final VoidCallback? onBack;
+  final List<Widget> actions;
+  const PageHead(this.title,
+      {super.key, this.count = -1, this.onBack, this.actions = const []});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeTokens.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(S.md, S.sm, S.md, S.sm),
+      child: Row(
+        children: [
+          if (onBack != null) ...[
+            IconBtn(Icons.arrow_back, onTap: onBack, color: c.ink),
+            const SizedBox(width: S.xs),
+          ],
+          Text(title,
+              style: TextStyle(
+                  fontSize: S.textXl, fontWeight: FontWeight.bold, color: c.ink)),
+          if (count >= 0) ...[
+            const SizedBox(width: S.xs),
+            Text('$count',
+                style: TextStyle(
+                    fontSize: S.textSm,
+                    color: c.inkSoft,
+                    fontFeatures: const [FontFeature.tabularFigures()])),
+          ],
+          const Spacer(),
+          ...actions,
+        ],
       ),
     );
   }

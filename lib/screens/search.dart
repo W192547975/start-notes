@@ -22,6 +22,7 @@ class _SearchScreenState extends State<SearchScreen> {
   void initState() {
     super.initState();
     _ctl.addListener(_search);
+    StartStore.I.addListener(_search);
   }
 
   void _search() {
@@ -42,6 +43,7 @@ class _SearchScreenState extends State<SearchScreen> {
 
   @override
   void dispose() {
+    StartStore.I.removeListener(_search);
     _ctl.dispose();
     super.dispose();
   }

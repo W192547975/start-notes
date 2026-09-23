@@ -4,9 +4,13 @@ import '../channels/native.dart';
 import '../data/item.dart';
 import '../data/store.dart';
 import '../theme/tokens.dart';
+import '../widgets/editor.dart';
 import '../widgets/ui.dart';
+import 'segment_screen.dart';
 
-/// 动手吧：一股脑输入，按行和句末标点（。！？；…）拆成小步骤预览，确认后各存一条念头。
+/// 开始 = 暂存区。纯文字模式：输入框 + 倒进来圆钮，
+/// 按行和句末标点（。！？；…）拆成多条 kindInbox 暂存（老版 DumpActivity 规则）。
+/// 暂存条目只展示文本 + 编辑 + 删除；分类/拆词一律去「捋一捋」tab 操作。
 class DumpScreen extends StatefulWidget {
   final String initial;
   const DumpScreen({super.key, this.initial = ''});
@@ -17,15 +21,20 @@ class DumpScreen extends StatefulWidget {
 
 class _DumpScreenState extends State<DumpScreen> {
   final _ctl = TextEditingController();
-  List<String> _preview = [];
+  bool _empty = true;
 
   @override
   void initState() {
     super.initState();
     _ctl.text = widget.initial;
-    _ctl.addListener(_rebuild);
-    _rebuild();
+    _empty = _ctl.text.trim().isEmpty;
+    _ctl.addListener(_sync);
     _loadShare();
+  }
+
+  void _sync() {
+    final e = _ctl.text.trim().isEmpty;
+    if (e != _empty) setState(() => _empty = e);
   }
 
   Future<void> _loadShare() async {
@@ -37,140 +46,168 @@ class _DumpScreenState extends State<DumpScreen> {
     }
   }
 
-  void _rebuild() {
-    setState(() => _preview = splitSentences(_ctl.text));
+  @override
+  void dispose() {
+    _ctl.removeListener(_sync);
+    _ctl.dispose();
+    super.dispose();
   }
 
-  /// 按行和句末标点拆分（不按逗号），移植自老版 DumpActivity。
-  static List<String> splitSentences(String text) {
+  /// 按行 + 句末标点（。！？；…）拆条；逗号不拆。
+  List<String> _chunks(String raw) {
     final out = <String>[];
-    final lines = text.split(RegExp(r'\r?\n'));
-    final enders = RegExp(r'[。！？；…]');
-    for (final line in lines) {
-      var buf = StringBuffer();
-      for (final ch in line.characters) {
-        buf.write(ch);
-        if (enders.hasMatch(ch)) {
-          final s = buf.toString().trim();
-          if (s.isNotEmpty) out.add(s);
-          buf = StringBuffer();
-        }
+    for (final line in raw.split(RegExp(r'[\n\r]+'))) {
+      final l = line.trim();
+      if (l.isEmpty) continue;
+      for (final p in l.split(RegExp(r'(?<=[。！？；…])'))) {
+        final t = p.trim();
+        if (t.isNotEmpty) out.add(t);
       }
-      final rest = buf.toString().trim();
-      if (rest.isNotEmpty) out.add(rest);
     }
     return out;
   }
 
+  /// 倒进来：拆成多条暂存，存完切到捋一捋整理（先存再捋）。
+  Future<void> _dump() async {
+    final chunks = _chunks(_ctl.text);
+    if (chunks.isEmpty) return;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    for (var i = 0; i < chunks.length; i++) {
+      await StartStore.I.put(
+        Item(kind: Item.kindInbox, title: chunks[i], rank: -1, created: now + i),
+        touchRank: true,
+      );
+    }
+    _ctl.clear();
+    if (!mounted) return;
+    // 存完跳捋一捋整理。pushReplacement 替换本页，捋完返回回首页。
+    Navigator.of(context)
+        .pushReplacement(MaterialPageRoute(builder: (_) => const SegmentScreen()));
+  }
+
   @override
-  void dispose() {
-    _ctl.dispose();
-    super.dispose();
+  Widget build(BuildContext context) => ListenableBuilder(
+        listenable: StartStore.I,
+        builder: (context, _) => _build(context),
+      );
+
+  Widget _build(BuildContext context) {
+    final c = ThemeTokens.of(context);
+    final s = StartStore.I;
+    final list = s.inboxTasks();
+
+    return Scaffold(
+      backgroundColor: c.paper,
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            PageHead('开始', count: list.length, onBack: () => Navigator.pop(context)),
+            _inputPanel(c),
+            Expanded(
+              child: list.isEmpty
+                  ? const EmptyView(
+                      icon: Icons.inbox_outlined,
+                      text: '空空如也，倒点东西进来',
+                    )
+                  : ListView.builder(
+                      padding: const EdgeInsets.fromLTRB(S.md, 0, S.md, S.lg + 16),
+                      itemCount: list.length,
+                      itemBuilder: (_, i) => _InboxCard(it: list[i], onChange: () => setState(() {})),
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 文字面板：输入框（自动聚焦）+ 倒进来圆钮（空=灰，有字=番茄红）。
+  Widget _inputPanel(C c) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(S.md, 0, S.md, S.sm),
+      child: StartCard(
+        padding: const EdgeInsets.fromLTRB(S.md, S.xs, S.xs, S.xs),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _ctl,
+                autofocus: widget.initial.isEmpty,
+                minLines: 1,
+                maxLines: 6,
+                style: TextStyle(fontSize: S.textMd, color: c.ink, height: 1.4),
+                decoration: InputDecoration(
+                  hintText: '想到什么一股脑写下来',
+                  hintStyle: TextStyle(color: c.inkSoft, fontSize: S.textSm),
+                  border: InputBorder.none,
+                  isDense: true,
+                ),
+              ),
+            ),
+            const SizedBox(width: S.xs),
+            Pressable(
+              onTap: _empty ? null : _dump,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: S.xxs),
+                child: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: _empty ? c.cardAlt : c.accent,
+                  ),
+                  child: Icon(Icons.south, size: 20,
+                      color: _empty ? c.inkSoft : Colors.white),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 一条暂存条目：文本 + 铅笔编辑 + 删除。分类与拆词请去「捋一捋」。
+class _InboxCard extends StatelessWidget {
+  final Item it;
+  final VoidCallback onChange;
+  const _InboxCard({required this.it, required this.onChange});
+
+  Future<void> _delete(BuildContext context) async {
+    final removed = StartStore.I.delete(it.id, cascade: false);
+    onChange();
+    if (context.mounted) {
+      UndoHost.show(context, '删了一条', () async => StartStore.I.restore(removed));
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final c = ThemeTokens.of(context);
-    final pad = MediaQuery.of(context).viewInsets.bottom;
-    return Scaffold(
-      backgroundColor: c.paper,
-      body: SafeArea(
-        child: Padding(
-          padding: EdgeInsets.fromLTRB(S.md, S.sm, S.md, S.md),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  IconBtn(Icons.arrow_back, onTap: () => Navigator.pop(context)),
-                  const Spacer(),
-                  Text('动手吧',
-                      style: TextStyle(fontSize: S.textLg, fontWeight: FontWeight.bold, color: c.ink)),
-                  const Spacer(),
-                  const SizedBox(width: 40),
-                ],
-              ),
-              const SizedBox(height: S.sm),
-              Expanded(
-                flex: _preview.isEmpty ? 3 : 2,
-                child: StartCard(
-                  child: TextField(
-                    controller: _ctl,
-                    autofocus: true,
-                    maxLines: null,
-                    expands: true,
-                    textAlignVertical: TextAlignVertical.top,
-                    style: TextStyle(fontSize: S.textLg, color: c.ink, height: 1.5),
-                    decoration: InputDecoration(
-                      hintText: '想到什么一股脑写下来，回头再拆',
-                      hintStyle: TextStyle(color: c.inkSoft),
-                      border: InputBorder.none,
-                    ),
-                  ),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: S.xs),
+      child: StartCard(
+        padding: const EdgeInsets.symmetric(horizontal: S.md, vertical: S.xs),
+        child: Row(
+          children: [
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: S.xs),
+                child: Text(
+                  it.title,
+                  maxLines: 4,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: S.textMd, color: c.ink, height: 1.4),
                 ),
               ),
-              if (_preview.isNotEmpty) ...[
-                const SizedBox(height: S.sm),
-                Text('将拆成 ${_preview.length} 件',
-                    style: TextStyle(fontSize: S.textSm, color: c.inkSoft)),
-                const SizedBox(height: S.xs),
-                Expanded(
-                  flex: 1,
-                  child: ListView.builder(
-                    itemCount: _preview.length,
-                    itemBuilder: (_, i) => Padding(
-                      padding: const EdgeInsets.symmetric(vertical: S.xxs),
-                      child: Row(
-                        children: [
-                          Text('·',
-                              style: TextStyle(color: c.accent, fontWeight: FontWeight.bold)),
-                          const SizedBox(width: S.xs),
-                          Expanded(
-                            child: Text(_preview[i],
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(fontSize: S.textMd, color: c.ink)),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-              SizedBox(
-                height: 48,
-                child: Pressable(
-                  onTap: _preview.isEmpty ? null : () async {
-                    final n = _preview.length;
-                    for (var i = 0; i < n; i++) {
-                      await StartStore.I.put(
-                        Item(kind: Item.kindIdea, title: _preview[i], rank: -1),
-                        touchRank: true,
-                      );
-                    }
-                    if (!mounted) return;
-                    UndoHost.show(context, '记下了 $n 件，去念头页捋一捋', () {});
-                    Navigator.pop(context);
-                  },
-                  child: Container(
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: _preview.isEmpty ? c.cardAlt : c.accent,
-                      borderRadius: BorderRadius.circular(S.radius),
-                    ),
-                    child: Text(
-                      _preview.isEmpty ? '先写点什么' : '拆成 ${_preview.length} 件',
-                      style: TextStyle(
-                        color: _preview.isEmpty ? c.inkSoft : Colors.white,
-                        fontSize: S.textMd,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
+            ),
+            IconBtn(Icons.edit_outlined, tip: '编辑', color: c.inkSoft,
+                onTap: () => showTextEdit(context, it, onSaved: onChange)),
+            IconBtn(Icons.delete_outline, tip: '删除', color: c.inkSoft, onTap: () => _delete(context)),
+          ],
         ),
       ),
     );
