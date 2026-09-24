@@ -13,7 +13,7 @@ class StartStore extends ChangeNotifier {
   static final StartStore I = StartStore._();
 
   static const fileJson = 'start_items.json';
-  static const eulaVersion = 7;
+  static const eulaVersion = 8;
 
   final List<Item> items = [];
   int seq = 1;
@@ -104,7 +104,7 @@ class StartStore extends ChangeNotifier {
       seq = maxSeq;
       await persist();
       for (final it in items) {
-        if (it.kind == Item.kindTask && !it.done && it.dueTime > 0) {
+        if (it.kind == Item.kindTask && !it.done && it.dueTime > 0 && it.alarm) {
           await Native.scheduleNotify(it.id, it.alarmLabel, it.dueTime);
         } else {
           await Native.cancelNotify(it.id);
@@ -151,7 +151,8 @@ class StartStore extends ChangeNotifier {
     final existing = it.id > 0 ? byId(it.id) : null;
     if (existing == null) {
       it.id = seq++;
-      it.created = now;
+      // 批量新建（拆词/多行）会显式传 created=now+k 保证子步骤顺序，不能覆盖。
+      if (it.created == 0) it.created = now;
       if (touchRank) it.rank = _minRank() - 1;
       items.add(it);
     } else if (!identical(existing, it)) {
@@ -163,8 +164,12 @@ class StartStore extends ChangeNotifier {
     if (it.done && it.completedAt == 0) it.completedAt = now;
     if (!it.done) it.completedAt = 0;
     await persist();
-    // 到点提醒：日程任务未完成且有时间 → 定时悬浮通知；否则撤销。
-    if (it.kind == Item.kindTask && !it.done && it.dueTime > 0 && prefBool('notify_on', true)) {
+    // 到点提醒：日程任务未完成、有时间且开了提醒 → 定时悬浮通知；否则撤销。
+    if (it.kind == Item.kindTask &&
+        !it.done &&
+        it.dueTime > 0 &&
+        it.alarm &&
+        prefBool('notify_on', true)) {
       await Native.scheduleNotify(it.id, it.alarmLabel, it.dueTime);
     } else {
       await Native.cancelNotify(it.id);
@@ -202,7 +207,7 @@ class StartStore extends ChangeNotifier {
     }
     await persist();
     for (final it in snapshot) {
-      if (it.kind == Item.kindTask && !it.done && it.dueTime > 0) {
+      if (it.kind == Item.kindTask && !it.done && it.dueTime > 0 && it.alarm) {
         await Native.scheduleNotify(it.id, it.alarmLabel, it.dueTime);
       }
     }

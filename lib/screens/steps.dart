@@ -24,24 +24,19 @@ class _StepsScreenState extends State<StepsScreen> {
   Item? get _task => StartStore.I.byId(widget.taskId);
 
   @override
+  void initState() {
+    super.initState();
+    // 没有步骤时进来直接弹键盘写。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (StartStore.I.subtasksOf(widget.taskId).isEmpty) _inputFocus.requestFocus();
+    });
+  }
+
+  @override
   void dispose() {
     _ctl.dispose();
     _inputFocus.dispose();
     super.dispose();
-  }
-
-  /// 按行 + 句末标点拆成多条步骤（与动手吧同规则，不按词拆）。
-  List<String> _splitIntoSteps(String raw) {
-    final out = <String>[];
-    for (final line in raw.split(RegExp(r'[\n\r]+'))) {
-      final l = line.trim();
-      if (l.isEmpty) continue;
-      for (final p in l.split(RegExp(r'[。！？；!?;…]+'))) {
-        final t = p.trim();
-        if (t.isNotEmpty) out.add(t);
-      }
-    }
-    return out;
   }
 
   /// 写的内容直接存为小步骤（多行/句末标点各存一条）。
@@ -49,7 +44,7 @@ class _StepsScreenState extends State<StepsScreen> {
     final task = _task;
     final raw = _ctl.text.trim();
     if (task == null || raw.isEmpty) return;
-    final parts = _splitIntoSteps(raw);
+    final parts = splitIntoLines(raw);
     if (parts.isEmpty) return;
     final now = DateTime.now().millisecondsSinceEpoch;
     for (var k = 0; k < parts.length; k++) {
@@ -87,76 +82,13 @@ class _StepsScreenState extends State<StepsScreen> {
     );
   }
 
-  /// 底部输入条：手动写步骤；可按句拆，也可大爆炸拆词。
-  Widget _inputBar(C c, {bool autoFocus = false}) {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(S.md, 0, S.md, S.sm),
-      padding: const EdgeInsets.fromLTRB(S.md, S.xs, S.xs, S.xs),
-      decoration: BoxDecoration(
-        color: c.card,
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: c.line),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: TextField(
-              controller: _ctl,
-              focusNode: _inputFocus,
-              autofocus: autoFocus,
-              minLines: 1,
-              maxLines: 4,
-              style: TextStyle(fontSize: S.textMd, color: c.ink),
-              cursorColor: c.accent,
-              decoration: InputDecoration(
-                hintText: '写一步；回车换行多写几步',
-                hintStyle: TextStyle(color: c.inkSoft, fontSize: S.textSm),
-                border: InputBorder.none,
-                isDense: true,
-              ),
-            ),
-          ),
-          ValueListenableBuilder<TextEditingValue>(
-            valueListenable: _ctl,
-            builder: (_, v, __) {
-              final has = v.text.trim().isNotEmpty;
-              return Row(
-                children: [
-                  // 捋一捋常驻：有字拆内容，没字先把光标带回来。
-                  IconBtn(Icons.call_split, tip: '捋一捋拆词',
-                      onTap: has
-                          ? _bangInput
-                          : () {
-                              _inputFocus.requestFocus();
-                            }),
-                  Pressable(
-                    onTap: has ? _commitInput : null,
-                    child: Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: has ? c.accent : c.cardAlt),
-                      child: Icon(Icons.arrow_upward,
-                          size: 20, color: has ? Colors.white : c.inkSoft),
-                    ),
-                  ),
-                ],
-              );
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
   /// 手动加一条步骤。
   Future<void> _addStep() async {
     final c = ThemeTokens.of(context);
     final ctl = TextEditingController();
     final v = await showDialog<String>(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dctx) => AlertDialog(
         backgroundColor: c.card,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(S.radius)),
         title: Text('加一步',
@@ -169,9 +101,11 @@ class _StepsScreenState extends State<StepsScreen> {
           decoration: InputDecoration(hintText: '写清楚这一步做什么', hintStyle: TextStyle(color: c.inkSoft)),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: Text('算了', style: TextStyle(color: c.inkSoft))),
+          // 用弹框自身 dctx：步骤页在 body 内嵌导航器内，弹框挂根导航器，
+          // 误用页面 context 会关掉步骤页、弹框卡住。
+          TextButton(onPressed: () => Navigator.pop(dctx), child: Text('算了', style: TextStyle(color: c.inkSoft))),
           TextButton(
-            onPressed: () => Navigator.pop(context, ctl.text.trim()),
+            onPressed: () => Navigator.pop(dctx, ctl.text.trim()),
             child: Text('好', style: TextStyle(color: c.accent, fontWeight: FontWeight.bold)),
           ),
         ],
@@ -191,7 +125,7 @@ class _StepsScreenState extends State<StepsScreen> {
     final ctl = TextEditingController(text: it.title);
     final v = await showDialog<String>(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dctx) => AlertDialog(
         backgroundColor: c.card,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(S.radius)),
         title: Text('改这一步',
@@ -203,9 +137,9 @@ class _StepsScreenState extends State<StepsScreen> {
           cursorColor: c.accent,
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: Text('算了', style: TextStyle(color: c.inkSoft))),
+          TextButton(onPressed: () => Navigator.pop(dctx), child: Text('算了', style: TextStyle(color: c.inkSoft))),
           TextButton(
-            onPressed: () => Navigator.pop(context, ctl.text.trim()),
+            onPressed: () => Navigator.pop(dctx, ctl.text.trim()),
             child: Text('好', style: TextStyle(color: c.accent, fontWeight: FontWeight.bold)),
           ),
         ],
@@ -319,7 +253,13 @@ class _StepsScreenState extends State<StepsScreen> {
                       onEdit: _editStep,
                       onReorder: _reorderSteps),
             ),
-            _inputBar(c, autoFocus: steps.isEmpty),
+            QuickInputBar(
+              controller: _ctl,
+              focus: _inputFocus,
+              hint: '写一步；回车换行多写几步',
+              onCommit: _commitInput,
+              onBang: _bangInput,
+            ),
           ],
         ),
       ),
@@ -447,7 +387,8 @@ class _StepList extends StatelessWidget {
                     ),
                   ),
                   if (!selecting)
-                    IconBtn(Icons.edit_outlined, tip: '改这一步', onTap: () => onEdit(it)),
+                    IconBtn(Icons.edit_outlined, tip: '改这一步', color: c.inkSoft,
+                        onTap: () => onEdit(it)),
                 ],
               ),
             ),

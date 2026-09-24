@@ -6,9 +6,10 @@ import 'channels/native.dart';
 import 'screens/dump.dart';
 import 'screens/focus.dart';
 import 'screens/home.dart';
-import 'screens/idea.dart';
 import 'screens/manual.dart';
+import 'screens/search.dart';
 import 'screens/segment_screen.dart';
+import 'screens/splash.dart';
 import 'screens/stats.dart';
 import 'screens/steps.dart';
 import 'theme/tokens.dart';
@@ -43,7 +44,6 @@ class _StartAppState extends State<StartApp> {
   @override
   void initState() {
     super.initState();
-    StartStore.I.addListener(_onChange);
     // 启动后静默检查更新，有新版自动提醒。
     Future.delayed(const Duration(seconds: 2), _autoUpdateCheck);
   }
@@ -80,13 +80,8 @@ class _StartAppState extends State<StartApp> {
     );
   }
 
-  void _onChange() {
-    if (!mounted) return;
-  }
-
   @override
   void dispose() {
-    StartStore.I.removeListener(_onChange);
     super.dispose();
   }
 
@@ -141,7 +136,7 @@ class _StartAppState extends State<StartApp> {
                 ),
               ),
             ),
-            home: const EulaGate(child: Root()),
+            home: const BootGate(),
             onGenerateRoute: (settings) {
               switch (settings.name) {
                 case '/steps':
@@ -160,6 +155,25 @@ class _StartAppState extends State<StartApp> {
         );
       },
     );
+  }
+}
+
+/// 启动门：先播放开机动画，结束后进协议门与主界面。
+class BootGate extends StatefulWidget {
+  const BootGate({super.key});
+
+  @override
+  State<BootGate> createState() => _BootGateState();
+}
+
+class _BootGateState extends State<BootGate> {
+  bool _splash = true;
+
+  @override
+  Widget build(BuildContext context) {
+    return _splash
+        ? SplashScreen(onDone: () => setState(() => _splash = false))
+        : const EulaGate(child: Root());
   }
 }
 
@@ -199,7 +213,7 @@ class Root extends StatefulWidget {
 }
 
 /// 主骨架：首页是主体（老版 TodayScreen），底栏 5 键切换 section。
-/// 底栏：念头 · 捋一捋 · 功能键(开始) · 专注 · 统计。
+/// 底栏：搜索 · 捋一捋 · 动手吧 · 专注 · 统计。
 /// body 内嵌一个 Navigator：首页是其根路由，section 页推到该嵌套 navigator
 /// （只占 body 区，Scaffold.bottomNavigationBar 始终常驻——老版 selectNav 行为）。
 /// 点键后该键保持番茄红，持续到另一个键被点击。切换 section 用 pushReplacement 防栈堆积。
@@ -224,9 +238,9 @@ class _RootState extends State<Root> {
     }
   }
 
-  /// 短按功能键 = 开始(暂存)文字输入。
+  /// 短按功能键 = 动手吧(速记倒进来)文字输入。
   void _openDumpText() => _goto(const DumpScreen(), 2);
-  void _openIdea() => _goto(const IdeaScreen(), 0);
+  void _openSearch() => _goto(const SearchScreen(), 0);
   void _openSegment() => _goto(const SegmentScreen(), 1);
   void _openFocus() => _goto(const FocusScreen(showBack: true), 3);
   void _openStats() => _goto(const StatsScreen(), 4);
@@ -258,19 +272,12 @@ class _RootState extends State<Root> {
         ),
       ),
       bottomNavigationBar: SafeArea(
-        child: Container(
+        child: SizedBox(
           height: 64,
-          margin: const EdgeInsets.symmetric(horizontal: S.md, vertical: S.xs),
-          padding: const EdgeInsets.symmetric(horizontal: S.md),
-          decoration: BoxDecoration(
-            color: c.card,
-            borderRadius: BorderRadius.circular(S.radius),
-            border: Border.all(color: c.line),
-          ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              _navKey(c, Icons.lightbulb_outline, _last == 0, _openIdea),
+              _navKey(c, Icons.search_outlined, _last == 0, _openSearch),
               _navKey(c, Icons.call_split, _last == 1, _openSegment),
               _funcButton,
               _navKey(c, Icons.timer_outlined, _last == 3, _openFocus),
@@ -293,7 +300,7 @@ class _RootState extends State<Root> {
     );
   }
 
-  /// 功能键 = 开始。短按=文字输入。全局无字，纯图标。
+  /// 中央红钮 = 动手吧。短按=文字输入。全局无字，纯图标。
   Widget get _funcButton {
     final c = ThemeTokens.of(context);
     return GestureDetector(
