@@ -8,9 +8,10 @@ import '../widgets/ui.dart';
 import 'bigbang.dart';
 import 'mindmap.dart';
 
-/// 捋一捋 = 暂存条目的分类与拆词工坊。
-/// 动手吧倒进来的内容统一到这里：
-///   - 单条分类为 念头 / 日程（设时间）/ 随手做
+/// 捋一捋 = 暂存条目的分类与拆词工坊，也支持「开始」的速记逻辑。
+/// 底部常驻输入条：写下来直接按行 / 句末标点拆成多条暂存，⑂ 可先拆词再存。
+/// 进来之后：
+///   - 单条分类为 日程（设时间）/ 随手做
 ///   - 单条捋一捋（大爆炸拆词），选中词各成一条新暂存，再逐条分类
 ///   - 批量选择后整体分类或删除（带撤销）
 /// 暂存一旦分类即离开本页（流入首页三块）。
@@ -24,6 +25,57 @@ class SegmentScreen extends StatefulWidget {
 class _SegmentScreenState extends State<SegmentScreen> {
   bool _selecting = false;
   final Set<int> _selected = {};
+  final TextEditingController _ctl = TextEditingController();
+  final FocusNode _inputFocus = FocusNode();
+
+  @override
+  void dispose() {
+    _ctl.dispose();
+    _inputFocus.dispose();
+    super.dispose();
+  }
+
+  /// 写的内容按行 / 句末标点拆成多条暂存（与「开始」同一规则）。
+  Future<void> _commitInbox() async {
+    final parts = splitIntoLines(_ctl.text);
+    if (parts.isEmpty) return;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    for (var k = 0; k < parts.length; k++) {
+      await StartStore.I.put(
+        Item(kind: Item.kindInbox, title: parts[k], rank: -1, created: now + k),
+        touchRank: true,
+      );
+    }
+    _ctl.clear();
+    if (mounted) {
+      setState(() {});
+      _inputFocus.requestFocus();
+    }
+  }
+
+  /// 写的内容先捋一捋拆词，挑中的词各成一条暂存。
+  Future<void> _bangInbox() async {
+    final raw = _ctl.text.trim();
+    if (raw.isEmpty || !mounted) return;
+    await showBigBang(
+      context,
+      raw,
+      confirmLabel: '拆成几条',
+      onDone: (kept) async {
+        final now = DateTime.now().millisecondsSinceEpoch;
+        for (var k = 0; k < kept.length; k++) {
+          await StartStore.I.put(
+            Item(kind: Item.kindInbox, title: kept[k], rank: -1, created: now + k),
+            touchRank: true,
+          );
+        }
+        if (mounted) {
+          setState(() => _ctl.clear());
+          _inputFocus.requestFocus();
+        }
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
@@ -54,8 +106,6 @@ class _SegmentScreenState extends State<SegmentScreen> {
                               : _selected.addAll(list.map((e) => e.id));
                         });
                       }),
-                      IconBtn(Icons.lightbulb_outline, tip: '全变念头',
-                          onTap: () => _batchClassify(Item.kindIdea)),
                       IconBtn(Icons.checklist_outlined, tip: '全变随手做',
                           onTap: () => _batchClassify(Item.kindTask, dueTime: 0)),
                       IconBtn(Icons.delete_outline, tip: '删除', onTap: _batchDelete),
@@ -77,10 +127,10 @@ class _SegmentScreenState extends State<SegmentScreen> {
               child: list.isEmpty
                   ? EmptyView(
                       icon: Icons.call_split,
-                      text: '去「开始」倒点东西，再来这里捋一捋',
+                      text: '在下面写点什么，自动拆成几条再捋',
                     )
                   : ListView.builder(
-                      padding: const EdgeInsets.fromLTRB(S.md, 0, S.md, S.lg + 16),
+                      padding: const EdgeInsets.fromLTRB(S.md, 0, S.md, S.sm),
                       itemCount: list.length,
                       itemBuilder: (_, i) {
                         final it = list[i];
@@ -105,6 +155,15 @@ class _SegmentScreenState extends State<SegmentScreen> {
                       },
                     ),
             ),
+            // 批量整理时收起输入条，避免边选边记误操作。
+            if (!_selecting)
+              QuickInputBar(
+                controller: _ctl,
+                focus: _inputFocus,
+                hint: '直接写下来；回车换行多记几条',
+                onCommit: _commitInbox,
+                onBang: _bangInbox,
+              ),
           ],
         ),
       ),
@@ -150,7 +209,7 @@ class _SegmentScreenState extends State<SegmentScreen> {
   }
 }
 
-/// 暂存卡片：文本 + 三分类（念头/日程/随手做）+ 捋一捋拆词 + 删除。
+/// 暂存卡片：文本 + 分类（日程/随手做）+ 捋一捋拆词 + 删除。
 class _InboxCard extends StatelessWidget {
   final Item it;
   final bool selected;
@@ -166,13 +225,6 @@ class _InboxCard extends StatelessWidget {
     required this.onEnterSelect,
     required this.onChange,
   });
-
-  Future<void> _toIdea() async {
-    it.kind = Item.kindIdea;
-    it.dueTime = 0;
-    await StartStore.I.put(it);
-    onChange();
-  }
 
   Future<void> _toAnytime() async {
     it.kind = Item.kindTask;
@@ -269,8 +321,6 @@ class _InboxCard extends StatelessWidget {
               const SizedBox(height: S.sm),
               Row(
                 children: [
-                  _Act(icon: Icons.lightbulb_outline, onTap: () => _toIdea()),
-                  const SizedBox(width: S.xs),
                   _Act(icon: Icons.event_outlined, onTap: () => _toSchedule(context)),
                   const SizedBox(width: S.xs),
                   _Act(icon: Icons.checklist_outlined, onTap: () => _toAnytime()),

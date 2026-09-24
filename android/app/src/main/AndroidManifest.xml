@@ -7,6 +7,7 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <!-- 读取手机日历事件并入首页时间线（老版 TodayScreen 行为） -->
     <uses-permission android:name="android.permission.READ_CALENDAR" />
+    <uses-permission android:name="android.permission.WRITE_CALENDAR" />
     <!-- 到点提醒：悬浮通知（Android 13+ 运行时申请）+ 精确闹钟 + 开机重排 + 常驻保活 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />

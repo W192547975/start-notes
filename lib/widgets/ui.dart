@@ -250,16 +250,19 @@ Future<T?> showStartSheet<T>(BuildContext context, WidgetBuilder builder) {
 }
 
 /// 统一对话框。
-Future<T?> showStartDialog<T>(BuildContext context, {required String title, String? content, List<Widget>? actions}) {
+/// 按钮必须用 actions 回调给出的 dctx（弹框自身 context）来 pop：
+/// 页面在 body 内嵌导航器内、弹框默认挂根导航器，用页面 context 会误关页面、弹框卡住。
+Future<T?> showStartDialog<T>(BuildContext context,
+    {required String title, Widget? content, required List<Widget> Function(BuildContext dctx) actions}) {
   final c = ThemeTokens.of(context);
   return showDialog<T>(
     context: context,
-    builder: (_) => AlertDialog(
+    builder: (dctx) => AlertDialog(
       backgroundColor: c.card,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(S.radius)),
       title: Text(title, style: TextStyle(color: c.ink, fontSize: S.textLg, fontWeight: FontWeight.bold)),
-      content: content == null ? null : Text(content, style: TextStyle(color: c.ink, fontSize: S.textMd)),
-      actions: actions,
+      content: content,
+      actions: actions(dctx),
     ),
   );
 }
@@ -280,6 +283,107 @@ class IconBtn extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(S.xs),
         child: Icon(icon, size: 24, color: color ?? c.ink),
+      ),
+    );
+  }
+}
+
+/// 按行 + 句末标点拆成多条（动手吧 / 小步骤 / 念头通用，不按词拆）。
+List<String> splitIntoLines(String raw) {
+  final out = <String>[];
+  for (final line in raw.split(RegExp(r'[\n\r]+'))) {
+    final l = line.trim();
+    if (l.isEmpty) continue;
+    for (final p in l.split(RegExp(r'[。！？；!?;…]+'))) {
+      final t = p.trim();
+      if (t.isNotEmpty) out.add(t);
+    }
+  }
+  return out;
+}
+
+/// 底部输入条（开始 / 捋一捋 / 念头 / 小步骤共用）：写一行存一条，回车换行多写几行。
+/// 左⑂捋一捋拆词（有字拆内容，没字聚焦输入），右提交圆钮。
+/// [showBang]=false 时隐藏拆词钮（开始页只负责倒进来）。
+class QuickInputBar extends StatelessWidget {
+  final TextEditingController controller;
+  final FocusNode focus;
+  final VoidCallback onCommit;
+  final VoidCallback onBang;
+  final String hint;
+  final bool showBang;
+  final IconData submitIcon;
+  final int maxLines;
+  final bool autofocus;
+  const QuickInputBar({
+    super.key,
+    required this.controller,
+    required this.focus,
+    required this.onCommit,
+    required this.onBang,
+    required this.hint,
+    this.showBang = true,
+    this.submitIcon = Icons.arrow_upward,
+    this.maxLines = 4,
+    this.autofocus = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeTokens.of(context);
+    return Container(
+      margin: const EdgeInsets.fromLTRB(S.md, 0, S.md, S.sm),
+      padding: const EdgeInsets.fromLTRB(S.md, S.xs, S.xs, S.xs),
+      decoration: BoxDecoration(
+        color: c.card,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: c.line),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: controller,
+              focusNode: focus,
+              autofocus: autofocus,
+              minLines: 1,
+              maxLines: maxLines,
+              style: TextStyle(fontSize: S.textMd, color: c.ink),
+              cursorColor: c.accent,
+              decoration: InputDecoration(
+                hintText: hint,
+                hintStyle: TextStyle(color: c.inkSoft, fontSize: S.textSm),
+                border: InputBorder.none,
+                isDense: true,
+              ),
+            ),
+          ),
+          ValueListenableBuilder<TextEditingValue>(
+            valueListenable: controller,
+            builder: (_, v, __) {
+              final has = v.text.trim().isNotEmpty;
+              return Row(
+                children: [
+                  if (showBang)
+                    IconBtn(Icons.call_split, tip: '捋一捋拆词',
+                        onTap: has ? onBang : focus.requestFocus),
+                  Pressable(
+                    onTap: has ? onCommit : null,
+                    child: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: has ? c.accent : c.cardAlt),
+                      child: Icon(submitIcon,
+                          size: 20, color: has ? Colors.white : c.inkSoft),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ],
       ),
     );
   }
