@@ -1,4 +1,4 @@
-﻿import java.util.Properties
+import java.util.Properties
 
 plugins {
     id("com.android.application")
@@ -26,8 +26,8 @@ android {
         applicationId = "com.astart.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 12
-        versionName = "1.3.2"
+        versionCode = 13
+        versionName = "1.3.3"
     }
 
     signingConfigs {
