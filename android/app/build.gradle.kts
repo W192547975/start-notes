@@ -26,8 +26,8 @@ android {
         applicationId = "com.astart.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 11
-        versionName = "1.3.1"
+        versionCode = 12
+        versionName = "1.3.2"
     }
 
     signingConfigs {

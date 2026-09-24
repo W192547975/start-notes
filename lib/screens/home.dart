@@ -522,19 +522,6 @@ class _FocusHero extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Icon(Icons.star, size: 14, color: c.accent),
-              const SizedBox(width: S.xxs),
-              Text('焦点',
-                  style: TextStyle(
-                      fontSize: S.textSm,
-                      color: c.inkSoft,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1)),
-            ],
-          ),
-          const SizedBox(height: S.xs),
           if (it == null) ...[
             // 空态：一句大标语把决策压到最小。
             Text('今天只做\n一件就好',
