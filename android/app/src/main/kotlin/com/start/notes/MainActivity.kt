@@ -131,7 +131,9 @@ class MainActivity : FlutterActivity() {
                 )
                 "calendarInsert" -> {
                     val title = call.argument<String>("title") ?: ""
-                    val ms = (call.argument<Int>("ms") ?: 0).toLong()
+                    // Dart 毫秒时间戳是 64 位，按值域编码为 Int 或 Long，须安全读取。
+                    val msRaw = call.argument<Any>("ms")
+                    val ms = (msRaw as? Long) ?: (msRaw as? Int)?.toLong() ?: 0L
                     if (ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_CALENDAR)
                         != PackageManager.PERMISSION_GRANTED
                     ) {
@@ -213,7 +215,8 @@ class MainActivity : FlutterActivity() {
                 }
                 "calendar" -> {
                     val title = call.argument<String>("title") ?: ""
-                    val ms = (call.argument<Int>("ms") ?: 0).toLong()
+                    val msRaw = call.argument<Any>("ms")
+                    val ms = (msRaw as? Long) ?: (msRaw as? Int)?.toLong() ?: 0L
                     try {
                         val cal = Calendar.getInstance().apply { timeInMillis = ms }
                         val i = Intent(Intent.ACTION_INSERT).apply {
@@ -230,14 +233,15 @@ class MainActivity : FlutterActivity() {
                 }
                 "alarm" -> {
                     val title = call.argument<String>("title") ?: ""
-                    val ms = (call.argument<Int>("ms") ?: 0).toLong()
+                    val msRaw = call.argument<Any>("ms")
+                    val ms = (msRaw as? Long) ?: (msRaw as? Int)?.toLong() ?: 0L
                     try {
                         val cal = Calendar.getInstance().apply { timeInMillis = ms }
                         val i = Intent(AlarmClock.ACTION_SET_ALARM).apply {
                             putExtra(AlarmClock.EXTRA_MESSAGE, title)
                             putExtra(AlarmClock.EXTRA_HOUR, cal.get(Calendar.HOUR_OF_DAY))
                             putExtra(AlarmClock.EXTRA_MINUTES, cal.get(Calendar.MINUTE))
-                            putExtra(AlarmClock.EXTRA_SKIP_UI, false)
+                            putExtra(AlarmClock.EXTRA_SKIP_UI, true)
                         }
                         startActivity(i)
                         result.success(null)

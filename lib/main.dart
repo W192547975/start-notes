@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'data/item.dart';
 import 'data/store.dart';
 import 'channels/native.dart';
 import 'screens/dump.dart';
 import 'screens/focus.dart';
 import 'screens/home.dart';
 import 'screens/manual.dart';
+import 'screens/mindmap.dart';
 import 'screens/search.dart';
 import 'screens/segment_screen.dart';
 import 'screens/splash.dart';
@@ -127,11 +129,12 @@ class _StartAppState extends State<StartApp> {
                   systemNavigationBarDividerColor: Colors.transparent,
                   systemNavigationBarContrastEnforced: false,
                 ),
-                // 全局撤销条：挂在 navigator 之上，任何页面（含根导航推入页）都能弹撤回。
+                // 全局撤销条 + 拖拽落点底座：挂在 navigator 之上，任何页面都能用。
                 child: Stack(
                   children: [
                     child!,
                     const UndoHost(),
+                    const _GlobalDragDock(),
                   ],
                 ),
               ),
@@ -156,6 +159,40 @@ class _StartAppState extends State<StartApp> {
       },
     );
   }
+}
+
+/// 全局拖拽落点底座：拖到「移到这删除」= 删除（可撤销）；
+/// 拖到「开成导图」= 以该条目标题为根新建思维导图并打开（原条目保留不动）。
+class _GlobalDragDock extends StatelessWidget {
+  const _GlobalDragDock();
+
+  static Future<void> _toTrash(int id) async {
+    final s = StartStore.I;
+    if (s.byId(id) == null) return;
+    final removed = s.delete(id, cascade: true);
+    final ctx = StartApp.navigatorKey.currentContext;
+    if (ctx != null && ctx.mounted) {
+      UndoHost.show(ctx, '已删除', () async => s.restore(removed));
+    }
+  }
+
+  static Future<void> _toMindmap(int id) async {
+    final s = StartStore.I;
+    final it = s.byId(id);
+    if (it == null) return;
+    final title = (it.title.isEmpty ? it.note : it.title).trim();
+    final root = Item(
+        kind: Item.kindInbox,
+        title: title.isEmpty ? '未命名导图' : title,
+        rank: -1);
+    await s.put(root);
+    StartApp.navigatorKey.currentState?.push(
+        MaterialPageRoute(builder: (_) => MindMapScreen(rootId: root.id)));
+  }
+
+  @override
+  Widget build(BuildContext context) =>
+      const DragDock(onTrash: _toTrash, onMindmap: _toMindmap);
 }
 
 /// 启动门：先播放开机动画，结束后进协议门与主界面。
@@ -227,14 +264,24 @@ class _RootState extends State<Root> {
   });
 
   /// 跳转 section：在首页则 push，已在某 section 则 pushReplacement 换页。
+  /// 用快速淡入替代默认上滑动画，避免切换时白屏卡顿。
   void _goto(Widget page, int idx) {
     setState(() => _last = idx);
     final nav = _bodyNav.currentState;
     if (nav == null) return;
+    final route = PageRouteBuilder(
+      transitionDuration: const Duration(milliseconds: 150),
+      reverseTransitionDuration: const Duration(milliseconds: 120),
+      pageBuilder: (_, __, ___) => page,
+      transitionsBuilder: (_, anim, __, child) => FadeTransition(
+        opacity: CurvedAnimation(parent: anim, curve: Curves.easeOut),
+        child: child,
+      ),
+    );
     if (nav.canPop()) {
-      nav.pushReplacement(MaterialPageRoute(builder: (_) => page));
+      nav.pushReplacement(route);
     } else {
-      nav.push(MaterialPageRoute(builder: (_) => page));
+      nav.push(route);
     }
   }
 

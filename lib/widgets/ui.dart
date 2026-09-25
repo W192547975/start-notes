@@ -1,6 +1,5 @@
 // ── 工匠的骄傲与喜悦 · Artisan's Pride & Joy ──
-// 致敬 Smartisan OS：
-//   闪念胶囊 → 念头 · 大爆炸 → 捋一捋 · 一步 → 开始
+// 致敬 Smartisan OS
 // 把每一个细节较真到底，是这件小东西全部的骄傲与喜悦。
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -152,13 +151,71 @@ class CheckDot extends StatelessWidget {
   }
 }
 
+/// 全局拖拽总线：任何条目被长按拖起时置 true，松手/取消/落下时归位。
+/// DragDock（挂在 main.dart 顶层）监听它浮出「垃圾桶 / 思维导图」两个落点。
+class DragDockBus {
+  DragDockBus._();
+  static final ValueNotifier<bool> active = ValueNotifier<bool>(false);
+}
+
+/// 全局统一长按拖拽行：拖起唤出底部落点底座，反馈样式全局一致
+/// （番茄浅底圆角卡，跟随手指）。[enabled]=false 时（如批量选择态）禁用拖拽。
+class DraggableLine extends StatelessWidget {
+  final int id;
+  final String title;
+  final bool enabled;
+  final Widget child;
+  const DraggableLine({
+    super.key,
+    required this.id,
+    required this.title,
+    required this.child,
+    this.enabled = true,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeTokens.of(context);
+    return LongPressDraggable<int>(
+      data: id,
+      maxSimultaneousDrags: enabled ? 1 : 0,
+      delay: const Duration(milliseconds: 120),
+      axis: Axis.vertical,
+      onDragStarted: () => DragDockBus.active.value = true,
+      onDragEnd: (_) => DragDockBus.active.value = false,
+      feedback: Material(
+        color: Colors.transparent,
+        child: ConstrainedBox(
+          constraints:
+              BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width - 96),
+          child: StartCard(
+            color: c.accentSoft,
+            child: Text(
+              title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                  fontSize: S.textMd, fontWeight: FontWeight.bold, color: c.ink),
+            ),
+          ),
+        ),
+      ),
+      childWhenDragging: Opacity(opacity: 0.45, child: child),
+      child: child,
+    );
+  }
+}
+
 /// 6 秒撤销条：全局栈底浮出，到时静默生效。
 class UndoHost extends StatefulWidget {
   const UndoHost({super.key});
 
+  /// 已挂载的实例（全局唯一，挂在 MaterialApp.builder 顶层）。
+  static _UndoHostState? _state;
+
   /// 显示撤销条。返回后 6 秒过期（过期不执行 onExpire 的删除，由调用方在删除时先快照）。
   static void show(BuildContext context, String text, VoidCallback onUndo) {
-    final state = context.findAncestorStateOfType<_UndoHostState>();
+    final state = _state ?? context.findAncestorStateOfType<_UndoHostState>();
     state?._show(text, onUndo);
   }
 
@@ -169,6 +226,18 @@ class UndoHost extends StatefulWidget {
 class _UndoHostState extends State<UndoHost> {
   String? _text;
   VoidCallback? _onUndo;
+
+  @override
+  void initState() {
+    super.initState();
+    UndoHost._state = this;
+  }
+
+  @override
+  void dispose() {
+    if (UndoHost._state == this) UndoHost._state = null;
+    super.dispose();
+  }
 
   void _show(String text, VoidCallback onUndo) {
     setState(() {
@@ -309,7 +378,7 @@ class QuickInputBar extends StatelessWidget {
   final TextEditingController controller;
   final FocusNode focus;
   final VoidCallback onCommit;
-  final VoidCallback onBang;
+  final VoidCallback? onBang;
   final String hint;
   final bool showBang;
   final IconData submitIcon;
@@ -320,7 +389,7 @@ class QuickInputBar extends StatelessWidget {
     required this.controller,
     required this.focus,
     required this.onCommit,
-    required this.onBang,
+    this.onBang,
     required this.hint,
     this.showBang = true,
     this.submitIcon = Icons.arrow_upward,
@@ -365,7 +434,7 @@ class QuickInputBar extends StatelessWidget {
               return Row(
                 children: [
                   if (showBang)
-                    IconBtn(Icons.call_split, tip: '捋一捋拆词',
+                    IconBtn(Icons.new_releases_outlined, tip: '捋一捋拆词',
                         onTap: has ? onBang : focus.requestFocus),
                   Pressable(
                     onTap: has ? onCommit : null,
@@ -385,6 +454,96 @@ class QuickInputBar extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// 全局拖拽落点底座：任何条目长按拖起时浮出「垃圾桶 / 思维导图」。
+/// 拖到垃圾桶=删除（可撤销）；拖到思维导图=以该条目为根新建导图并打开。
+/// 挂在 MaterialApp.builder 顶层，监听 [DragDockBus.active]。
+class DragDock extends StatelessWidget {
+  final Future<void> Function(int id)? onTrash;
+  final Future<void> Function(int id)? onMindmap;
+  const DragDock({super.key, this.onTrash, this.onMindmap});
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<bool>(
+      valueListenable: DragDockBus.active,
+      builder: (_, on, __) => Positioned(
+        left: 0,
+        right: 0,
+        bottom: 96,
+        child: IgnorePointer(
+          ignoring: !on,
+          child: AnimatedOpacity(
+            opacity: on ? 1 : 0,
+            duration: const Duration(milliseconds: 160),
+            curve: Curves.easeOut,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _Drop(
+                    icon: Icons.delete_outline,
+                    label: '移到这删除',
+                    onAccept: onTrash ?? (_) async {}),
+                const SizedBox(width: S.lg),
+                _Drop(
+                    icon: Icons.account_tree_outlined,
+                    label: '开成导图',
+                    onAccept: onMindmap ?? (_) async {}),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _Drop extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Future<void> Function(int id) onAccept;
+  const _Drop({required this.icon, required this.label, required this.onAccept});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeTokens.of(context);
+    return DragTarget<int>(
+      onAcceptWithDetails: (d) => onAccept(d.data),
+      builder: (ctx, cand, _) {
+        final hov = cand.isNotEmpty;
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 140),
+          curve: Curves.easeOut,
+          padding: const EdgeInsets.symmetric(horizontal: S.lg, vertical: S.sm),
+          decoration: BoxDecoration(
+            color: hov ? c.accent : c.card,
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: hov ? c.accent : c.line, width: 1.5),
+            boxShadow: [
+              BoxShadow(
+                  color: c.ink.withValues(alpha: hov ? 0.22 : 0.08),
+                  blurRadius: hov ? 14 : 8,
+                  spreadRadius: hov ? 1 : 0)
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon,
+                  size: 18, color: hov ? Colors.white : c.inkSoft),
+              const SizedBox(width: S.xs),
+              Text(label,
+                  style: TextStyle(
+                      fontSize: S.textSm,
+                      fontWeight: FontWeight.bold,
+                      color: hov ? Colors.white : c.ink)),
+            ],
+          ),
+        );
+      },
     );
   }
 }
@@ -511,14 +670,14 @@ class _TimePickerSheetState extends State<_TimePickerSheet> {
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                _wheel(_hc, 24, _h, (v) => setState(() => _h = v)),
+                Expanded(child: _wheel(_hc, 24, _h, (v) => setState(() => _h = v))),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: S.sm),
                   child: Text(':',
                       style: TextStyle(
                           fontSize: 22, fontWeight: FontWeight.bold, color: c.ink)),
                 ),
-                _wheel(_mc, 60, _m, (v) => setState(() => _m = v)),
+                Expanded(child: _wheel(_mc, 60, _m, (v) => setState(() => _m = v))),
               ],
             ),
             const SizedBox(height: S.md),
@@ -544,6 +703,186 @@ class _TimePickerSheetState extends State<_TimePickerSheet> {
                   child: Pressable(
                     onTap: () =>
                         Navigator.pop(context, TimeOfDay(hour: _h, minute: _m)),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: S.sm),
+                      decoration: BoxDecoration(
+                          color: c.accent,
+                          borderRadius: BorderRadius.circular(999)),
+                      child: Center(
+                          child: Text('确认',
+                              style: TextStyle(
+                                  fontSize: S.textMd,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white))),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 自定义日期选择面板：替代原生 showDatePicker。
+/// 年/月/日三列滚轮，随年月联动当月天数，风格统一番茄红。
+Future<DateTime?> showStartDatePicker(BuildContext context,
+    {DateTime? initial}) async {
+  return showStartSheet<DateTime>(context, (ctx) => _DatePickerSheet(initial: initial));
+}
+
+class _DatePickerSheet extends StatefulWidget {
+  final DateTime? initial;
+  const _DatePickerSheet({this.initial});
+  @override
+  State<_DatePickerSheet> createState() => _DatePickerSheetState();
+}
+
+class _DatePickerSheetState extends State<_DatePickerSheet> {
+  // 未来的事最多选一年后的：年份只列今年与明年，选到明年时月/日不超今天。
+  late final int _yearBase = DateTime.now().year;
+  static const _yearCount = 2;
+  late final int _nowMonth = DateTime.now().month;
+  late final int _nowDay = DateTime.now().day;
+  late int _y, _mo, _d;
+  final _yc = FixedExtentScrollController();
+  final _mc = FixedExtentScrollController();
+  final _dc = FixedExtentScrollController();
+
+  int get _monthCount => _y >= _yearBase + 1 ? _nowMonth : 12;
+
+  int get _daysInMonth {
+    final max = DateUtils.getDaysInMonth(_y, _mo);
+    if (_y >= _yearBase + 1 && _mo >= _nowMonth) return _nowDay;
+    return max;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    final now = widget.initial ?? DateTime.now();
+    _y = now.year.clamp(_yearBase, _yearBase + _yearCount - 1);
+    _mo = now.month;
+    _d = now.day;
+    _clampFields();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _yc.jumpToItem(_y - _yearBase);
+      _mc.jumpToItem(_mo - 1);
+      _dc.jumpToItem((_d - 1).clamp(0, _daysInMonth - 1));
+    });
+  }
+
+  @override
+  void dispose() {
+    _yc.dispose();
+    _mc.dispose();
+    _dc.dispose();
+    super.dispose();
+  }
+
+  /// 纯字段钳制（初始化用，不碰滚轮控制器）。
+  void _clampFields() {
+    if (_y >= _yearBase + 1) {
+      if (_mo > _nowMonth) _mo = _nowMonth;
+      if (_mo == _nowMonth && _d > _nowDay) _d = _nowDay;
+    }
+    final maxD = _daysInMonth;
+    if (_d > maxD) _d = maxD;
+  }
+
+  void _clampDay() {
+    if (_y >= _yearBase + 1 && _mo > _nowMonth) {
+      _mo = _nowMonth;
+      _mc.jumpToItem(_mo - 1);
+    }
+    final max = _daysInMonth;
+    if (_d > max) {
+      _d = max;
+      _dc.jumpToItem(_d - 1);
+    }
+  }
+
+  Widget _wheel(FixedExtentScrollController ctl, int count, int cur,
+      ValueChanged<int> onSel, String Function(int) label) {
+    final c = ThemeTokens.of(context);
+    return SizedBox(
+      height: 160,
+      child: ListWheelScrollView.useDelegate(
+        controller: ctl,
+        itemExtent: 40,
+        perspective: 0.005,
+        physics: const FixedExtentScrollPhysics(),
+        onSelectedItemChanged: onSel,
+        childDelegate: ListWheelChildBuilderDelegate(
+          childCount: count,
+          builder: (_, i) {
+            final on = i == cur;
+            return Center(
+              child: Text(
+                label(i),
+                style: TextStyle(
+                  fontSize: on ? 22 : S.textMd,
+                  fontWeight: on ? FontWeight.bold : FontWeight.normal,
+                  color: on ? c.accent : c.inkSoft,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeTokens.of(context);
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(S.md),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Expanded(child: _wheel(_yc, _yearCount, _y - _yearBase,
+                    (v) => setState(() { _y = _yearBase + v; _clampDay(); }),
+                    (i) => '${_yearBase + i} 年')),
+                const SizedBox(width: S.xs),
+                Expanded(child: _wheel(_mc, _monthCount, _mo - 1,
+                    (v) => setState(() { _mo = v + 1; _clampDay(); }),
+                    (i) => '${i + 1} 月')),
+                const SizedBox(width: S.xs),
+                Expanded(child: _wheel(_dc, _daysInMonth, _d - 1,
+                    (v) => setState(() => _d = v + 1),
+                    (i) => '${i + 1} 日')),
+              ],
+            ),
+            const SizedBox(height: S.md),
+            Row(
+              children: [
+                Expanded(
+                  child: Pressable(
+                    onTap: () => Navigator.pop(context),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: S.sm),
+                      decoration: BoxDecoration(
+                          color: c.cardAlt,
+                          borderRadius: BorderRadius.circular(999)),
+                      child: Center(
+                          child: Text('取消',
+                              style: TextStyle(
+                                  fontSize: S.textMd, color: c.ink))),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: S.sm),
+                Expanded(
+                  child: Pressable(
+                    onTap: () => Navigator.pop(context, DateTime(_y, _mo, _d)),
                     child: Container(
                       padding: const EdgeInsets.symmetric(vertical: S.sm),
                       decoration: BoxDecoration(

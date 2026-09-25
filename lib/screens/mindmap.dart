@@ -1,9 +1,93 @@
 import 'package:flutter/material.dart';
-
 import '../data/item.dart';
 import '../data/store.dart';
 import '../theme/tokens.dart';
 import '../widgets/ui.dart';
+
+/// 导图索引页：列出所有根导图（kindInbox 且 parentId==0 的条目）。
+/// 从捋一捋右上角进入，可新建、点进编辑、批量删除。
+class MindMapIndexScreen extends StatefulWidget {
+  const MindMapIndexScreen({super.key});
+
+  @override
+  State<MindMapIndexScreen> createState() => _MindMapIndexScreenState();
+}
+
+class _MindMapIndexScreenState extends State<MindMapIndexScreen> {
+  List<Item> _roots() => StartStore.I.items
+      .where((e) => e.isInbox && e.parentId == 0 && !e.done)
+      .toList();
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeTokens.of(context);
+    final list = _roots();
+    return Scaffold(
+      backgroundColor: c.paper,
+      body: SafeArea(
+        child: Column(
+          children: [
+            PageHead('导图',
+                count: list.length,
+                onBack: () => Navigator.pop(context),
+                actions: [
+                  IconBtn(Icons.add, tip: '新建导图', onTap: () async {
+                    final s = StartStore.I;
+                    final n = Item(kind: Item.kindInbox, title: '新导图', rank: -1);
+                    await s.put(n);
+                    if (!mounted) return;
+                    Navigator.push(context, MaterialPageRoute(
+                        builder: (_) => MindMapScreen(rootId: n.id)));
+                  }),
+                ]),
+            Expanded(
+              child: list.isEmpty
+                  ? const EmptyView(
+                      icon: Icons.account_tree_outlined,
+                      text: '还没有导图，点右上角新建一个')
+                  : ListView.builder(
+                      padding: const EdgeInsets.fromLTRB(S.md, 0, S.md, S.sm),
+                      itemCount: list.length,
+                      itemBuilder: (_, i) {
+                        final it = list[i];
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: S.xs),
+                          child: Pressable(
+                            onTap: () => Navigator.push(context, MaterialPageRoute(
+                                builder: (_) => MindMapScreen(rootId: it.id))),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: S.md, vertical: S.sm),
+                              decoration: BoxDecoration(
+                                color: c.card,
+                                borderRadius: BorderRadius.circular(S.radius),
+                                border: Border.all(color: c.line),
+                              ),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      it.title.trim().isEmpty ? '（空）' : it.title,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(fontSize: S.textMd, color: c.ink),
+                                    ),
+                                  ),
+                                  Text('${StartStore.I.subtasksOf(it.id).length} 节点',
+                                      style: TextStyle(fontSize: S.textSm, color: c.inkSoft)),
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 /// 思维导图：以一条暂存为根、向右生长的树。
 /// 数据即 kindInbox 子条目（parentId 挂树，与数据层完全兼容）。
@@ -21,6 +105,8 @@ class _MindMapScreenState extends State<MindMapScreen> {
   static const _nodeW = 168.0, _nodeH = 48.0, _gapX = 36.0, _gapY = 10.0;
 
   int _sel = 0;
+  bool _selecting = false;
+  final Set<int> _selected = {};
   final Map<int, Offset> _delta = {}; // 拖动偏移（连同子树）
 
   Item? get _root => StartStore.I.byId(widget.rootId);
@@ -132,7 +218,7 @@ class _MindMapScreenState extends State<MindMapScreen> {
 
   Widget _node(Item n, Offset pos, C c) {
     final isRoot = n.id == widget.rootId;
-    final sel = _sel == n.id;
+    final sel = _selecting ? _selected.contains(n.id) : _sel == n.id;
     return Positioned(
       left: pos.dx,
       top: pos.dy,
@@ -151,7 +237,19 @@ class _MindMapScreenState extends State<MindMapScreen> {
         },
         onLongPress: () => _nodeMenu(n),
         child: Pressable(
-          onTap: () => setState(() => _sel = n.id),
+          onTap: () {
+            if (_selecting) {
+              setState(() {
+                if (_selected.contains(n.id)) {
+                  _selected.remove(n.id);
+                } else {
+                  _selected.add(n.id);
+                }
+              });
+            } else {
+              setState(() => _sel = n.id);
+            }
+          },
           onDoubleTap: () => _editNode(n),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: S.sm, vertical: S.xxs),
@@ -182,9 +280,57 @@ class _MindMapScreenState extends State<MindMapScreen> {
     );
   }
 
-  /// 底部工具列：选中节点后给出 加子/加同级/编辑/删除。
+  /// 底部工具列：选中节点后给出 加子/加同级/编辑/删除；批量态给 全选/删除/退出。
   Widget _toolbar(C c) {
     final s = StartStore.I;
+    if (_selecting) {
+      final allIds = <int>[];
+      _descIds(widget.rootId, allIds);
+      return Container(
+        decoration: BoxDecoration(
+          color: c.card,
+          border: Border(top: BorderSide(color: c.line)),
+        ),
+        child: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: S.md, vertical: S.xs),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                IconBtn(Icons.select_all, tip: '全选', onTap: () {
+                  setState(() {
+                    _selected.length == allIds.length
+                        ? _selected.clear()
+                        : _selected.addAll(allIds);
+                  });
+                }),
+                Text('已选 ${_selected.length}', style: TextStyle(color: c.inkSoft, fontSize: S.textSm)),
+                IconBtn(Icons.delete_outline, tip: '删除所选', color: c.accent,
+                    onTap: _selected.isEmpty ? null : () {
+                      final snap = s.exportJson();
+                      for (final id in _selected) {
+                        if (id != widget.rootId) s.delete(id, cascade: true);
+                      }
+                      setState(() {
+                        _selected.clear();
+                        _selecting = false;
+                        _sel = 0;
+                      });
+                      UndoHost.show(context, '已删除所选', () async => s.restoreJson(snap));
+                    }),
+                IconBtn(Icons.close, tip: '退出', onTap: () {
+                  setState(() {
+                    _selecting = false;
+                    _selected.clear();
+                  });
+                }),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
     final selItem = _sel == 0 ? null : s.byId(_sel);
     final isRootSel = _sel == widget.rootId;
     return Container(
@@ -223,8 +369,12 @@ class _MindMapScreenState extends State<MindMapScreen> {
                       if (!mounted) return;
                       UndoHost.show(context, '剪掉一枝', () async => s.restoreJson(snap));
                     }),
-              if (_sel != 0 && isRootSel)
-                IconBtn(Icons.edit_outlined, tip: '编辑根', onTap: () => _editNode(s.byId(widget.rootId)!)),
+              IconBtn(Icons.checklist_outlined, tip: '批量删除',
+                  onTap: () => setState(() {
+                        _selecting = true;
+                        _selected.clear();
+                        if (_sel != 0 && _sel != widget.rootId) _selected.add(_sel);
+                      })),
             ],
           ),
         ),

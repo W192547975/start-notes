@@ -4,9 +4,8 @@ import '../data/item.dart';
 import '../data/store.dart';
 import '../theme/tokens.dart';
 import '../widgets/ui.dart';
-import 'bigbang.dart';
 
-/// 捋一捋：把一件事拆成小步骤。支持输入拆词，或手动逐条添加。
+/// 捋一捋：把一件事拆成小步骤。输入条直接写，回车换行各存一条。
 class StepsScreen extends StatefulWidget {
   final int taskId;
   const StepsScreen({super.key, required this.taskId});
@@ -61,25 +60,6 @@ class _StepsScreenState extends State<StepsScreen> {
       // 连续写：提交后键盘不收。
       _inputFocus.requestFocus();
     }
-  }
-
-  /// 写的内容先大爆炸拆词，挑中的词各存一条步骤。
-  Future<void> _bangInput() async {
-    final task = _task;
-    final raw = _ctl.text.trim();
-    if (task == null || raw.isEmpty || !mounted) return;
-    await showBigBang(
-      context,
-      raw,
-      confirmLabel: '存为小步骤',
-      onDone: (kept) async {
-        await saveKeptAsSteps(kept, task);
-        if (mounted) {
-          _ctl.clear();
-          setState(() {});
-        }
-      },
-    );
   }
 
   /// 手动加一条步骤。
@@ -258,7 +238,7 @@ class _StepsScreenState extends State<StepsScreen> {
               focus: _inputFocus,
               hint: '写一步；回车换行多写几步',
               onCommit: _commitInput,
-              onBang: _bangInput,
+              showBang: false,
             ),
           ],
         ),

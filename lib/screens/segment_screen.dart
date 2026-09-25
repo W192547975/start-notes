@@ -84,7 +84,6 @@ class _SegmentScreenState extends State<SegmentScreen> {
       );
 
   Widget _build(BuildContext context) {
-    final c = ThemeTokens.of(context);
     final s = StartStore.I;
     final list = s.inboxTasks();
 
@@ -117,6 +116,7 @@ class _SegmentScreenState extends State<SegmentScreen> {
                       }),
                     ]
                   : [
+                      IconBtn(Icons.account_tree_outlined, tip: '导图', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MindMapIndexScreen()))),
                       IconBtn(Icons.add, tip: '新建', onTap: _newOne),
                       IconBtn(Icons.playlist_add_check, tip: '批量整理', onTap: () {
                         if (list.isNotEmpty) setState(() => _selecting = true);
@@ -236,12 +236,8 @@ class _InboxCard extends StatelessWidget {
 
   Future<void> _toSchedule(BuildContext context) async {
     final now = DateTime.now();
-    final d = await showDatePicker(
-      context: context,
-      initialDate: it.dueTime > 0 ? DateTime.fromMillisecondsSinceEpoch(it.dueTime) : now,
-      firstDate: now.subtract(const Duration(days: 1)),
-      lastDate: now.add(const Duration(days: 365 * 2)),
-    );
+    final d = await showStartDatePicker(context,
+        initial: it.dueTime > 0 ? DateTime.fromMillisecondsSinceEpoch(it.dueTime) : now);
     if (d == null) return;
     if (!context.mounted) return;
     final t = await showStartTimePicker(context,

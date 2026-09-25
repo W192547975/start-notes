@@ -214,7 +214,11 @@ class _SearchScreenState extends State<SearchScreen> {
                             return Padding(
                               padding:
                                   const EdgeInsets.symmetric(vertical: S.xs),
-                              child: Row(
+                              child: DraggableLine(
+                                id: it.id,
+                                title: it.title.isEmpty ? it.note : it.title,
+                                enabled: !_selecting,
+                                child: Row(
                                 children: [
                                   Expanded(
                                     child: Pressable(
@@ -313,6 +317,7 @@ class _SearchScreenState extends State<SearchScreen> {
                                         tip: '删除',
                                         onTap: () => _deleteOne(it)),
                                 ],
+                              ),
                               ),
                             );
                           },

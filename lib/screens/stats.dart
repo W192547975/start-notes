@@ -4,82 +4,237 @@ import '../data/store.dart';
 import '../theme/tokens.dart';
 import '../widgets/ui.dart';
 
-/// 统计：极简纯文字。今日专注、专注日、完成数、累计，加近 7 天柱状图。
-/// 无卡片底，数字等宽对齐，一眼看清进展。
-class StatsScreen extends StatelessWidget {
+/// 统计：按日期维度查看——左右滑动切换日期，从首次使用到今天，一天一页。
+/// 每页四个数字（专注分钟 / 专注次数 / 完成的事 / 新增条目）+ 当日整点专注分布。
+/// 数字等宽对齐，无卡片底，与全局风格一致。
+class StatsScreen extends StatefulWidget {
   const StatsScreen({super.key});
 
   @override
-  Widget build(BuildContext context) => ListenableBuilder(
-        listenable: StartStore.I,
-        builder: (context, _) => _build(context),
-      );
+  State<StatsScreen> createState() => _StatsScreenState();
+}
 
-  Widget _build(BuildContext context) {
+class _StatsScreenState extends State<StatsScreen> {
+  PageController? _ctl;
+  DateTime? _firstDay;
+  int _days = 0;
+  int _index = 0;
+
+  static const _wk = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+
+  @override
+  void initState() {
+    super.initState();
+    _init();
+  }
+
+  Future<void> _init() async {
+    final first = await StartStore.I.firstUseDate();
+    if (!mounted) return;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final days = today.difference(first).inDays + 1;
+    setState(() {
+      _firstDay = first;
+      _days = days;
+      _index = days - 1;
+      _ctl = PageController(initialPage: days - 1);
+    });
+  }
+
+  @override
+  void dispose() {
+    _ctl?.dispose();
+    super.dispose();
+  }
+
+  DateTime _dayOf(int i) => _firstDay!.add(Duration(days: i));
+
+  void _go(int i) {
+    _ctl?.animateToPage(i,
+        duration: const Duration(milliseconds: 220), curve: Curves.easeOut);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeTokens.of(context);
+    if (_ctl == null) {
+      return const SafeArea(
+        child: Center(
+          child:
+              SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2)),
+        ),
+      );
+    }
+    return SafeArea(
+      child: ListenableBuilder(
+        listenable: StartStore.I,
+        builder: (context, _) => _build(c),
+      ),
+    );
+  }
+
+  Widget _build(C c) {
+    final idx = _index;
+    final day = _dayOf(idx);
+    final isToday = idx == _days - 1;
+    final rel = isToday ? '今天' : (idx == _days - 2 ? '昨天' : null);
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(S.lg, S.lg, S.lg, S.sm),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              IconBtn(
+                Icons.chevron_left,
+                tip: '前一天',
+                color: idx > 0 ? c.ink : c.line,
+                onTap: idx > 0 ? () => _go(idx - 1) : null,
+              ),
+              Expanded(
+                child: Column(
+                  children: [
+                    // 主标题与胶囊基线对齐，避免视觉错位。
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.baseline,
+                      textBaseline: TextBaseline.alphabetic,
+                      children: [
+                        Text(
+                          '${day.month}月${day.day}日',
+                          style: TextStyle(
+                            fontSize: S.textXl,
+                            fontWeight: FontWeight.bold,
+                            color: c.ink,
+                            fontFeatures: const [FontFeature.tabularFigures()],
+                            height: 1.0,
+                          ),
+                        ),
+                        if (rel != null) ...[
+                          const SizedBox(width: S.xs),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: S.xs, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: c.accentSoft,
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(rel,
+                                style: TextStyle(
+                                    fontSize: S.textSm,
+                                    fontWeight: FontWeight.bold,
+                                    color: c.accent,
+                                    height: 1.0)),
+                          ),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: S.xxs),
+                    Text(
+                      '${_wk[day.weekday - 1]} · 第 ${idx + 1} 天',
+                      style: TextStyle(
+                          fontSize: S.textSm,
+                          color: c.inkSoft,
+                          fontFeatures: const [FontFeature.tabularFigures()],
+                          height: 1.2),
+                    ),
+                  ],
+                ),
+              ),
+              IconBtn(
+                Icons.chevron_right,
+                tip: '后一天',
+                color: !isToday ? c.ink : c.line,
+                onTap: !isToday ? () => _go(idx + 1) : null,
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: PageView.builder(
+            controller: _ctl,
+            itemCount: _days,
+            onPageChanged: (i) => setState(() => _index = i),
+            itemBuilder: (_, i) => _DayPage(day: _dayOf(i)),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// 单日统计页。
+class _DayPage extends StatelessWidget {
+  final DateTime day;
+  const _DayPage({required this.day});
+
+  static int _epochOf(DateTime d) =>
+      DateTime(d.year, d.month, d.day).difference(DateTime(1970, 1, 1)).inDays;
+
+  @override
+  Widget build(BuildContext context) {
     final c = ThemeTokens.of(context);
     final s = StartStore.I;
-    final last7 = s.focusMinutesLast7();
+    final epoch = _epochOf(day);
+    final focus = s.focusMinutesOn(epoch);
+    final sessions = s.focusCountOn(epoch);
+    final done = s.completedOn(epoch);
+    final added = s.createdOn(epoch);
+    final hours = s.focusHoursOn(epoch);
+    final quiet = focus == 0 && done == 0 && added == 0;
 
-    return SafeArea(
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 160),
+      switchInCurve: Curves.easeOut,
+      switchOutCurve: Curves.easeIn,
+      transitionBuilder: (child, anim) => FadeTransition(opacity: anim, child: child),
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(S.lg, S.xl, S.lg, S.xl + 16),
-        children: [
-          Text('统计',
-              style: TextStyle(
-                  fontSize: S.textSm, color: c.inkSoft, fontWeight: FontWeight.bold)),
-          const SizedBox(height: S.lg),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                  child: _Stat(c, big: '${s.todayFocusMinutes()}', label: '今日专注分钟')),
-              Expanded(
-                  child: _Stat(c, big: '${s.activeDaysLast7()}', label: '近 7 天专注日')),
-            ],
-          ),
-          const SizedBox(height: S.lg),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                  child: _Stat(c, big: '${s.completedTasksCount()}', label: '完成的事')),
-              Expanded(
-                  child: _Stat(c, big: '${s.totalFocusMinutes()}', label: '累计专注分钟')),
-            ],
-          ),
-          const SizedBox(height: S.xl),
-          Text('专注分钟',
-              style: TextStyle(
-                  fontSize: S.textSm, color: c.inkSoft, fontWeight: FontWeight.bold)),
-          const SizedBox(height: S.md),
-          SizedBox(
-            height: 120,
-            child: CustomPaint(
-              size: const Size(double.infinity, 120),
-              painter: _BarsPainter(
-                  data: last7, accent: c.accent, soft: c.cardAlt, ink: c.inkSoft),
-              child: const SizedBox.expand(),
+      key: ValueKey(epoch),
+      padding: const EdgeInsets.fromLTRB(S.lg, S.sm, S.lg, S.xl + 16),
+      children: [
+        Row(children: [
+          Expanded(child: _Stat(c, big: '$focus', label: '专注分钟')),
+          Expanded(child: _Stat(c, big: '$sessions', label: '专注次数')),
+        ]),
+        const SizedBox(height: S.lg),
+        Row(children: [
+          Expanded(child: _Stat(c, big: '$done', label: '完成的事')),
+          Expanded(child: _Stat(c, big: '$added', label: '新增条目')),
+        ]),
+        const SizedBox(height: S.xl),
+        Text('整点专注分布',
+            style: TextStyle(
+                fontSize: S.textMd, fontWeight: FontWeight.bold, color: c.ink)),
+        const SizedBox(height: S.md),
+        SizedBox(
+          height: 96,
+          width: double.infinity,
+          child: CustomPaint(
+              painter: _HoursPainter(data: hours, accent: c.accent, soft: c.cardAlt)),
+        ),
+        const SizedBox(height: S.xxs),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: ['0', '6', '12', '18', '24']
+              .map((t) => Text(t,
+                  style: TextStyle(fontSize: S.textSm, color: c.inkSoft)))
+              .toList(),
+        ),
+        if (quiet)
+          Padding(
+            padding: const EdgeInsets.only(top: S.xl),
+            child: Center(
+              child: Text('这一天安安静静，没有记录',
+                  style: TextStyle(fontSize: S.textSm, color: c.inkSoft)),
             ),
           ),
-          const SizedBox(height: S.xs),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              for (var i = 0; i < 7; i++)
-                Text('${i == 6 ? '' : '-${6 - i}'}',
-                    style: TextStyle(
-                        fontSize: S.textSm,
-                        color: c.inkSoft,
-                        fontFeatures: const [FontFeature.tabularFigures()])),
-            ],
-          ),
-        ],
+      ],
       ),
     );
   }
 }
 
-/// 单项数字：大号等宽数字 + 小字标签，无底色。
 class _Stat extends StatelessWidget {
   final C c;
   final String big;
@@ -89,45 +244,53 @@ class _Stat extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(big,
-            style: TextStyle(
-                fontSize: 30,
-                fontWeight: FontWeight.bold,
-                color: c.ink,
-                fontFeatures: const [FontFeature.tabularFigures()])),
+        Text(
+          big,
+          style: TextStyle(
+            fontSize: 30,
+            fontWeight: FontWeight.bold,
+            color: c.ink,
+            fontFeatures: const [FontFeature.tabularFigures()],
+            height: 1.1,
+          ),
+        ),
         const SizedBox(height: S.xxs),
-        Text(label, style: TextStyle(fontSize: S.textSm, color: c.inkSoft)),
+        Text(label,
+            style: TextStyle(
+                fontSize: S.textSm,
+                color: c.inkSoft,
+                height: 1.2)),
       ],
     );
   }
 }
 
-class _BarsPainter extends CustomPainter {
+/// 整点专注分布：24 格柱，当天有专注的整点以番茄红标出。
+class _HoursPainter extends CustomPainter {
   final List<int> data;
   final Color accent;
   final Color soft;
-  final Color ink;
-
-  _BarsPainter({required this.data, required this.accent, required this.soft, required this.ink});
+  _HoursPainter({required this.data, required this.accent, required this.soft});
 
   @override
   void paint(Canvas canvas, Size size) {
-    final max = data.fold<int>(1, (a, b) => b > a ? b : a);
-    final w = size.width / data.length;
-    for (var i = 0; i < data.length; i++) {
-      final h = data[i] <= 0 ? 4.0 : (data[i] / max) * (size.height - 8);
-      final isToday = i == data.length - 1;
-      final r = RRect.fromRectAndCorners(
-        Rect.fromLTWH(i * w + w * 0.22, size.height - h, w * 0.56, h),
-        topLeft: const Radius.circular(4),
-        topRight: const Radius.circular(4),
+    final max = data.fold<int>(0, (m, v) => v > m ? v : m);
+    final slot = size.width / 24;
+    final barW = slot * 0.55;
+    for (var i = 0; i < 24; i++) {
+      final v = data[i];
+      final frac = max == 0 ? 0.0 : v / max;
+      final h = v <= 0 ? 3.0 : (size.height * frac).clamp(6.0, size.height);
+      final rect = RRect.fromRectAndRadius(
+        Rect.fromLTWH(i * slot + (slot - barW) / 2, size.height - h, barW, h),
+        const Radius.circular(3),
       );
-      canvas.drawRRect(r, Paint()..color = isToday || data[i] > 0 ? accent : soft);
+      canvas.drawRRect(rect, Paint()..color = v > 0 ? accent : soft);
     }
   }
 
   @override
-  bool shouldRepaint(_BarsPainter old) => old.data != data;
+  bool shouldRepaint(_HoursPainter old) =>
+      old.data != data || old.accent != accent || old.soft != soft;
 }

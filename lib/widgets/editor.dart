@@ -19,6 +19,22 @@ Future<void> showItemEditor(BuildContext context, Item it,
   );
 }
 
+/// 新建日程统一入口：先依次选日期、时间（任一步取消即放弃，不落任何数据），
+/// 再打开编辑器写标题。避免在编辑器弹层上叠开选择弹层导致时序错乱。
+Future<void> showScheduleEditor(BuildContext context, {String? title}) async {
+  final now = DateTime.now();
+  final d = await showStartDatePicker(context, initial: now);
+  if (d == null || !context.mounted) return;
+  final t = await showStartTimePicker(context, initial: TimeOfDay.fromDateTime(now));
+  if (t == null || !context.mounted) return;
+  final it = Item()
+    ..dueTime = DateTime(d.year, d.month, d.day, t.hour, t.minute).millisecondsSinceEpoch
+    // 设了时间默认开到点提醒（编辑器里可随手关）。
+    ..alarm = true;
+  if (title != null && title.trim().isNotEmpty) it.title = title.trim();
+  await showItemEditor(context, it, asSchedule: true);
+}
+
 class _EditorSheet extends StatefulWidget {
   final Item item;
   final VoidCallback? onDeleted;
@@ -40,8 +56,9 @@ class _EditorSheetState extends State<_EditorSheet> {
     _title = TextEditingController(text: widget.item.title);
     _note = TextEditingController(text: widget.item.note);
     _title.addListener(_onText);
-    // 新建日程：弹层一打开直接进日期时间选择；取消即放弃，不建空白日程。
-    if (widget.asSchedule) {
+    // 新建日程：正常已由 showScheduleEditor 先选好日期时间；此处仅作兜底，
+    // 没带时间打开时才弹选择器，取消即放弃，不建空白日程。
+    if (widget.asSchedule && widget.item.dueTime == 0) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _pickDue(auto: true);
       });
@@ -216,7 +233,7 @@ class _EditorSheetState extends State<_EditorSheet> {
                     if (context.mounted) Navigator.pop(context);
                   }),
                 if (!it.isIdea && (!widget.asSchedule || complete))
-                  _Chip(label: '拆成小步骤', icon: Icons.call_split, onTap: () {
+                  _Chip(label: '拆成小步骤', icon: Icons.flare, onTap: () {
                     Navigator.pop(context);
                     Navigator.of(context, rootNavigator: true)
                         .pushNamed('/steps', arguments: it.id);
@@ -262,6 +279,25 @@ class _EditorSheetState extends State<_EditorSheet> {
                   StartStore.I.delete(it.id);
                 } else {
                   await StartStore.I.put(it);
+                  // 新建日程给个落点反馈：今天的直接进清单，未来的到那天自然出现。
+                  if (widget.asSchedule) {
+                    // 自动写入手机日历 + 自动设系统闹钟（静默，不跳应用）。
+                    final evId = await Native.calendarInsert(it.alarmLabel, it.dueTime);
+                    if (evId > 0) {
+                      it.eventId = evId;
+                      await StartStore.I.put(it);
+                    }
+                    Native.setAlarm(it.alarmLabel, it.dueTime);
+                    StartApp.messengerKey.currentState?.showSnackBar(
+                      SnackBar(
+                        behavior: SnackBarBehavior.floating,
+                        backgroundColor: Colors.black87,
+                        duration: const Duration(seconds: 2),
+                        content: Text('已排进 ${_fmtDue(it.dueTime)}，日历和闹钟都设好了',
+                            style: const TextStyle(color: Colors.white)),
+                      ),
+                    );
+                  }
                 }
                 if (context.mounted) Navigator.pop(context);
               },
@@ -283,12 +319,8 @@ class _EditorSheetState extends State<_EditorSheet> {
   Future<void> _pickDue({bool auto = false}) async {
     final it = widget.item;
     final now = DateTime.now();
-    final d = await showDatePicker(
-      context: context,
-      initialDate: it.dueTime > 0 ? DateTime.fromMillisecondsSinceEpoch(widget.item.dueTime) : now,
-      firstDate: now.subtract(const Duration(days: 365)),
-      lastDate: now.add(const Duration(days: 365 * 2)),
-    );
+    final d = await showStartDatePicker(context,
+        initial: it.dueTime > 0 ? DateTime.fromMillisecondsSinceEpoch(widget.item.dueTime) : now);
     if (d == null || !mounted) {
       if (auto) Navigator.pop(context);
       return;
@@ -356,6 +388,100 @@ class _Chip extends StatelessWidget {
             Text(label, style: TextStyle(color: color, fontSize: S.textSm)),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// 日程多行批量写入：先换行写好几件日程，再选一个共同的日期时间，一次全部排进去。
+/// 与全局速记同一拆分规则（按行与句末标点自动拆开）。
+Future<void> showScheduleBatch(BuildContext context) async {
+  final ctl = TextEditingController();
+  final titles = await showStartSheet<List<String>>(
+    context,
+    (_) => _ScheduleBatchInput(ctl: ctl),
+  );
+  if (titles == null || titles.isEmpty || !context.mounted) return;
+  final now = DateTime.now();
+  final d = await showStartDatePicker(context, initial: now);
+  if (d == null || !context.mounted) return;
+  final t = await showStartTimePicker(context, initial: TimeOfDay.fromDateTime(now));
+  if (t == null || !context.mounted) return;
+  final due = DateTime(d.year, d.month, d.day, t.hour, t.minute).millisecondsSinceEpoch;
+  final created = DateTime.now().millisecondsSinceEpoch;
+  for (var i = 0; i < titles.length; i++) {
+    final it = Item(kind: Item.kindTask, title: titles[i], dueTime: due, alarm: true, created: created + i);
+    // 自动写入手机日历 + 自动设系统闹钟（静默，不跳应用）。
+    final evId = await Native.calendarInsert(it.alarmLabel, due);
+    if (evId > 0) it.eventId = evId;
+    await StartStore.I.put(it);
+    Native.setAlarm(it.alarmLabel, due);
+  }
+  StartApp.messengerKey.currentState?.showSnackBar(
+    SnackBar(
+      behavior: SnackBarBehavior.floating,
+      backgroundColor: Colors.black87,
+      duration: const Duration(seconds: 2),
+      content: Text('${titles.length} 件日程排进 ${_fmtDueShort(due)}，日历和闹钟都设好了',
+          style: const TextStyle(color: Colors.white)),
+    ),
+  );
+}
+
+String _fmtDueShort(int ms) {
+  final d = DateTime.fromMillisecondsSinceEpoch(ms);
+  final now = DateTime.now();
+  final day = DateTime(d.year, d.month, d.day);
+  final today = DateTime(now.year, now.month, now.day);
+  final diff = day.difference(today).inDays;
+  final hm = '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
+  if (diff == 0) return '今天 $hm';
+  if (diff == 1) return '明天 $hm';
+  return '${d.month}/${d.day} $hm';
+}
+
+class _ScheduleBatchInput extends StatelessWidget {
+  final TextEditingController ctl;
+  const _ScheduleBatchInput({required this.ctl});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeTokens.of(context);
+    final pad = MediaQuery.of(context).viewInsets.bottom;
+    return Padding(
+      padding: EdgeInsets.only(left: S.md, right: S.md, top: S.md, bottom: pad + S.md),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TextField(
+            controller: ctl,
+            autofocus: true,
+            minLines: 1,
+            maxLines: 6,
+            style: TextStyle(fontSize: S.textLg, color: c.ink, height: 1.4),
+            decoration: InputDecoration(
+              hintText: '写几件要排的日程，换行多写几件',
+              hintStyle: TextStyle(color: c.inkSoft),
+              border: InputBorder.none,
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(top: S.xxs),
+            child: Text('下一步为它们一起选日期和时间',
+                style: TextStyle(fontSize: S.textSm, color: c.inkSoft)),
+          ),
+          const SizedBox(height: S.sm),
+          Pressable(
+            onTap: () => Navigator.pop(context, splitIntoLines(ctl.text)),
+            child: Container(
+              height: 48,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(color: c.accent, borderRadius: BorderRadius.circular(S.radius)),
+              child: const Icon(Icons.arrow_forward, size: 22, color: Colors.white),
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -1,4 +1,4 @@
-import 'dart:convert';
+﻿import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -375,6 +375,18 @@ class StartStore extends ChangeNotifier {
     prefs['focus_day'] = today;
     prefs['focus_min'] = total;
     prefs[focusDayKey(today)] = total;
+    // 按日统计（1.5 起）：当天专注次数 + 各小时专注分布，供统计页按日期查看。
+    final cntKey = focusDayKey(today).replaceFirst('focus_min_', 'focus_cnt_');
+    final cnt = _int(prefs[cntKey], 0) + 1;
+    final hrs = focusHoursOn(today);
+    final h = DateTime.now().hour;
+    hrs[h] = (hrs[h] + minutes).clamp(0, 1440);
+    final hrsStr = hrs.join(',');
+    final hrsKey = focusDayKey(today).replaceFirst('focus_min_', 'focus_hrs_');
+    await Prefs.set(cntKey, cnt);
+    await Prefs.set(hrsKey, hrsStr);
+    prefs[cntKey] = cnt;
+    prefs[hrsKey] = hrsStr;
     notifyListeners();
   }
 
@@ -414,4 +426,81 @@ class StartStore extends ChangeNotifier {
   int completedTasksCount() => items
       .where((it) => it.parentId == 0 && !it.isIdea && it.done && it.completedAt > 0)
       .length;
+
+  // ---------------- 按日统计（统计页左右滑动按日期查看） ----------------
+
+  static int _dayStartMs(int epochDay) =>
+      DateTime(1970, 1, 1).add(Duration(days: epochDay)).millisecondsSinceEpoch;
+
+  /// 某天的专注分钟。
+  int focusMinutesOn(int epochDay) => _int(prefs[focusDayKey(epochDay)], 0);
+
+  /// 某天的专注次数（1.5 起记录，更早的日子为 0）。
+  int focusCountOn(int epochDay) => _int(
+      prefs[focusDayKey(epochDay).replaceFirst('focus_min_', 'focus_cnt_')], 0);
+
+  /// 某天各小时专注分钟（24 格；1.5 起记录，更早的日子全 0）。
+  List<int> focusHoursOn(int epochDay) {
+    final raw =
+        prefs[focusDayKey(epochDay).replaceFirst('focus_min_', 'focus_hrs_')];
+    final r = List<int>.filled(24, 0);
+    if (raw is String && raw.isNotEmpty) {
+      final parts = raw.split(',');
+      for (var i = 0; i < 24 && i < parts.length; i++) {
+        r[i] = int.tryParse(parts[i]) ?? 0;
+      }
+    }
+    return r;
+  }
+
+  /// 某天完成的顶层任务数（completedAt 落在当日）。
+  int completedOn(int epochDay) {
+    final lo = _dayStartMs(epochDay);
+    final hi = lo + const Duration(days: 1).inMilliseconds;
+    return items
+        .where((it) =>
+            it.parentId == 0 &&
+            !it.isIdea &&
+            it.done &&
+            it.completedAt >= lo &&
+            it.completedAt < hi)
+        .length;
+  }
+
+  /// 某天新增的条目数（created 落在当日，含全部类型与步骤）。
+  int createdOn(int epochDay) {
+    final lo = _dayStartMs(epochDay);
+    final hi = lo + const Duration(days: 1).inMilliseconds;
+    return items.where((it) => it.created >= lo && it.created < hi).length;
+  }
+
+  /// 首次使用日期：Prefs 已存直取；老用户以现有数据（条目创建/完成时间、
+  /// focus_min_* 历史键）里最早的一天回填，保证统计页覆盖全部使用周期。
+  Future<DateTime> firstUseDate() async {
+    final saved = _int(prefs['first_use'], 0);
+    if (saved > 0) return DateTime.fromMillisecondsSinceEpoch(saved);
+    var earliest = DateTime.now();
+    for (final it in items) {
+      for (final ts in [it.created, it.completedAt]) {
+        if (ts > 0) {
+          final d = DateTime.fromMillisecondsSinceEpoch(ts);
+          if (d.isBefore(earliest)) earliest = d;
+        }
+      }
+    }
+    prefs.forEach((k, v) {
+      if (k.startsWith('focus_min_')) {
+        final p = k.substring(10).split('-');
+        if (p.length == 3) {
+          final d = DateTime(int.tryParse(p[0]) ?? 9999,
+              int.tryParse(p[1]) ?? 1, int.tryParse(p[2]) ?? 1);
+          if (d.isBefore(earliest)) earliest = d;
+        }
+      }
+    });
+    final day = DateTime(earliest.year, earliest.month, earliest.day);
+    prefs['first_use'] = day.millisecondsSinceEpoch;
+    await Prefs.set('first_use', day.millisecondsSinceEpoch);
+    return day;
+  }
 }

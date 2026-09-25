@@ -82,73 +82,97 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     showQuickAdd(ctx);
   }
 
-  /// 「选一件事」面板：今日未完成任务里挑一件设为焦点（ADHD：一次只做一件，降低决策负荷）。
+  /// 「开始吧」：想到什么直接写一件；或从下面未完成的事里选一件。
+  /// 返回 String=新写标题，Item=选已有，均设为今日焦点。
   Future<void> _pickFocus() async {
     final s = StartStore.I;
+    final ctl = TextEditingController();
     final list = s.openTasks().where((e) => !e.done).toList();
-    if (list.isEmpty) {
-      _quickAdd();
-      return;
-    }
-    await showStartSheet(context, (ctx) {
+    final result = await showStartSheet<Object>(context, (ctx) {
       final c = ThemeTokens.of(ctx);
+      final pad = MediaQuery.of(ctx).viewInsets.bottom;
       return SafeArea(
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(S.md, S.md, S.md, S.lg),
+          padding: EdgeInsets.fromLTRB(S.md, S.md, S.md, pad + S.md),
           child: Column(
             mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text('今天只盯一件事',
                   style: TextStyle(
                       fontSize: S.textLg, fontWeight: FontWeight.bold, color: c.ink)),
               const SizedBox(height: S.xxs),
-              Text('选一个，其他的先放一放',
+              Text('写一件，或者从下面选一件',
                   style: TextStyle(fontSize: S.textSm, color: c.inkSoft)),
               const SizedBox(height: S.sm),
-              Flexible(
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: list.length,
-                  itemBuilder: (_, i) {
-                    final it = list[i];
-                    final timed = it.dueTime > 0;
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: S.xs),
-                      child: Pressable(
-                        onTap: () async {
-                          await s.setFocus(it.id);
-                          if (ctx.mounted) Navigator.pop(ctx);
-                        },
-                        child: StartCard(
-                          color: s.todayFocus()?.id == it.id ? c.accentSoft : null,
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: S.md, vertical: S.sm),
-                          child: Row(
-                            children: [
-                              Icon(
-                                timed ? Icons.schedule_outlined : Icons.checklist_outlined,
-                                size: 16,
-                                color: c.inkSoft,
-                              ),
-                              const SizedBox(width: S.sm),
-                              Expanded(
-                                child: Text(
-                                  it.title,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                      fontSize: S.textMd,
-                                      fontWeight: FontWeight.bold,
-                                      color: c.ink),
+              TextField(
+                controller: ctl,
+                autofocus: true,
+                maxLines: null,
+                style: TextStyle(fontSize: S.textLg, color: c.ink, height: 1.4),
+                decoration: InputDecoration(
+                  hintText: '想到什么，直接写',
+                  hintStyle: TextStyle(color: c.inkSoft),
+                  border: InputBorder.none,
+                ),
+              ),
+              if (list.isNotEmpty) ...[
+                const SizedBox(height: S.sm),
+                Flexible(
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: list.length,
+                    itemBuilder: (_, i) {
+                      final it = list[i];
+                      final timed = it.dueTime > 0;
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: S.xs),
+                        child: Pressable(
+                          onTap: () => Navigator.pop(ctx, it),
+                          child: StartCard(
+                            color: s.todayFocus()?.id == it.id ? c.accentSoft : null,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: S.md, vertical: S.sm),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  timed ? Icons.schedule_outlined : Icons.checklist_outlined,
+                                  size: 16,
+                                  color: c.inkSoft,
                                 ),
-                              ),
-                            ],
+                                const SizedBox(width: S.sm),
+                                Expanded(
+                                  child: Text(
+                                    it.title,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                        fontSize: S.textMd,
+                                        fontWeight: FontWeight.bold,
+                                        color: c.ink),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
-                      ),
-                    );
-                  },
+                      );
+                    },
+                  ),
+                ),
+              ],
+              const SizedBox(height: S.sm),
+              Pressable(
+                onTap: () {
+                  final t = ctl.text.trim();
+                  if (t.isNotEmpty) Navigator.pop(ctx, t);
+                },
+                child: Container(
+                  height: 48,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(color: c.accent, borderRadius: BorderRadius.circular(S.radius)),
+                  child: const Text('好了',
+                      style: TextStyle(color: Colors.white, fontSize: S.textMd, fontWeight: FontWeight.bold)),
                 ),
               ),
             ],
@@ -156,6 +180,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         ),
       );
     });
+    if (result is Item) {
+      await s.setFocus(result.id);
+    } else if (result is String && result.isNotEmpty) {
+      final it = Item(kind: Item.kindTask, title: result);
+      await s.put(it);
+      await s.setFocus(it.id);
+    }
   }
 
   /// 今天：今天到期 + 过期未完成（未来的日子还没到，先不来添乱）。
@@ -253,7 +284,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       ),
                       child: Column(
                         children: [
-                          _SectionLabel('日程', onAdd: _newSchedule),
+                          GestureDetector(
+                            onLongPress: () => setState(() => _selecting = true),
+                            child: _SectionLabel('日程', onAdd: _newSchedule),
+                          ),
                           if (entries.isNotEmpty)
                             for (var i = 0; i < entries.length; i++) ...[
                               if (i > 0) const SizedBox(height: S.xxs),
@@ -286,40 +320,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     },
                     itemBuilder: (_, i) {
                       final it = anytime[i];
-                      return LongPressDraggable<int>(
+                      return DraggableLine(
                         key: ValueKey(it.id),
-                        data: it.id,
-                        delay: const Duration(milliseconds: 120),
-                        axis: Axis.vertical,
-                        feedback: Material(
-                          color: Colors.transparent,
-                          child: ConstrainedBox(
-                            constraints: BoxConstraints(
-                                maxWidth: MediaQuery.sizeOf(context).width - 96),
-                            child: StartCard(
-                              color: ThemeTokens.of(context).accentSoft,
-                              child: Text(
-                                it.title,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                    fontSize: S.textMd,
-                                    fontWeight: FontWeight.bold,
-                                    color: ThemeTokens.of(context).ink),
-                              ),
-                            ),
-                          ),
-                        ),
-                        childWhenDragging: Opacity(
-                          opacity: 0.45,
-                          child: _TaskLine(
-                            it: it,
-                            nowMs: _nowMs,
-                            selecting: _selecting,
-                            selected: _selected,
-                            onChange: () => setState(() {}),
-                          ),
-                        ),
+                        id: it.id,
+                        title: it.title,
+                        enabled: !_selecting,
                         child: _TaskLine(
                           it: it,
                           nowMs: _nowMs,
@@ -340,46 +345,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
-  /// 「今天」列表里的一行：任务可拖动设焦点，日历事件点击直达系统日历。
+  /// 「今天」列表里的一行：任务可长按拖拽（设焦点 / 垃圾桶删除 / 开成导图）。
   Widget _todayEntry(Map<String, Object?> e) {
     if (e['kind'] == 'event') {
       final ev = e['event'] as Map<String, Object?>;
       return _EventLine(event: ev, nowMs: _nowMs);
     }
     final it = e['item'] as Item;
-    return LongPressDraggable<int>(
-      data: it.id,
-      delay: const Duration(milliseconds: 120),
-      axis: Axis.vertical,
-      feedback: Material(
-        color: Colors.transparent,
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-              maxWidth: MediaQuery.sizeOf(context).width - 96),
-          child: StartCard(
-            color: ThemeTokens.of(context).accentSoft,
-            child: Text(
-              it.title,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                  fontSize: S.textMd,
-                  fontWeight: FontWeight.bold,
-                  color: ThemeTokens.of(context).ink),
-            ),
-          ),
-        ),
-      ),
-      childWhenDragging: Opacity(
-        opacity: 0.45,
-        child: _TaskLine(
-          it: it,
-          nowMs: _nowMs,
-          selecting: _selecting,
-          selected: _selected,
-          onChange: () => setState(() {}),
-        ),
-      ),
+    return DraggableLine(
+      id: it.id,
+      title: it.title,
+      enabled: !_selecting,
       child: _TaskLine(
         it: it,
         nowMs: _nowMs,
@@ -400,13 +376,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (!mounted) return;
     UndoHost.show(context, '已移入日程，选个时间', () async => s.restoreJson(snap));
     final ctx = StartApp.navigatorKey.currentContext ?? context;
-    await showItemEditor(ctx, Item()..title = it.title, asSchedule: true);
+    if (ctx.mounted) await showScheduleEditor(ctx, title: it.title);
   }
 
-  /// 日程区右上角加号：新建日程（打开即选日期时间，无标题或无时间不会保存）。
+  /// 日程区右上角加号：多行批量写入日程（单行也能正常创建）。
   Future<void> _newSchedule() async {
     final ctx = StartApp.navigatorKey.currentContext ?? context;
-    await showItemEditor(ctx, Item(), asSchedule: true);
+    if (ctx.mounted) await showScheduleBatch(ctx);
   }
 
   /// 选择态顶栏：关闭 + 计数 + 全选 + 完成 + 删除（老版 buildAnytimeSelectBar）。
@@ -534,7 +510,7 @@ class _FocusHero extends StatelessWidget {
             Text('选好后，打开 Start 就能直接开始',
                 style: TextStyle(fontSize: S.textSm, color: c.inkSoft)),
             const SizedBox(height: S.md),
-            // 主胶囊：选一件事（也可以把日程卡直接拖到这里）。
+            // 主胶囊：开始吧——写一件或选一件，也可以把日程卡直接拖到这里。
             Pressable(
               onTap: onPick,
               child: Container(
@@ -542,7 +518,7 @@ class _FocusHero extends StatelessWidget {
                     const EdgeInsets.symmetric(horizontal: 30, vertical: 13),
                 decoration: BoxDecoration(
                     color: c.accent, borderRadius: BorderRadius.circular(999)),
-                child: Text('选一件',
+                child: Text('开始吧',
                     style: TextStyle(
                         fontSize: S.textLg,
                         fontWeight: FontWeight.bold,
@@ -556,7 +532,7 @@ class _FocusHero extends StatelessWidget {
               child: Padding(
                 padding:
                     const EdgeInsets.symmetric(horizontal: S.xxs, vertical: S.xxs),
-                child: Text('不选，直接专注',
+                child: Text('直接专注',
                     style: TextStyle(
                         fontSize: S.textSm,
                         fontWeight: FontWeight.bold,
@@ -623,16 +599,16 @@ class _FocusHero extends StatelessWidget {
                     ),
                   ),
                   const Spacer(),
-                  // 次操作：完成 / 拆步骤 / 编辑 / 换一件，纯图标不抢戏。
+                  // 次操作：完成 / 拆步骤 / 编辑 / 重写，纯图标不抢戏。
                   IconBtn(Icons.check, tip: '完成', onTap: () => _complete(context)),
-                  IconBtn(Icons.call_split, tip: '拆成小步骤', onTap: () {
+                  IconBtn(Icons.hexagon_outlined, tip: '拆成小步骤', onTap: () {
                     Navigator.of(context, rootNavigator: true)
                         .pushNamed('/steps', arguments: it.id);
                   }),
                   IconBtn(Icons.edit_outlined, tip: '编辑',
                       onTap: () => showItemEditor(context, it)),
-                  // 换一件：降低承诺压力，随时可以重新选。
-                  IconBtn(Icons.swap_horiz, tip: '换一件', onTap: onPick),
+                  // 重写一件：降低承诺压力，随时可以换。
+                  IconBtn(Icons.swap_horiz, tip: '重写', onTap: onPick),
                 ],
               ),
             ] else
@@ -793,7 +769,7 @@ class _ListEmpty extends StatelessWidget {
   }
 }
 
-/// 日历事件行：小方点 + 标题 + 时刻，点击直达系统日历。
+/// 日历事件行：小方点 + 标题 + 时刻，纯展示不跳转（避免误入系统打开方式界面）。
 class _EventLine extends StatelessWidget {
   final Map<String, Object?> event;
   final int nowMs;
@@ -806,9 +782,7 @@ class _EventLine extends StatelessWidget {
     final title = (event['title'] as String?) ?? '';
     final calName = (event['calName'] as String?) ?? '';
     final overdue = begin > 0 && begin < nowMs;
-    return Pressable(
-      onTap: () => Native.openUrl('content://com.android.calendar/time/$begin'),
-      child: Padding(
+    return Padding(
         padding: const EdgeInsets.symmetric(vertical: S.xs),
         child: Row(
           children: [
@@ -847,7 +821,6 @@ class _EventLine extends StatelessWidget {
             ],
           ],
         ),
-      ),
     );
   }
 
@@ -991,7 +964,7 @@ class _TaskLine extends StatelessWidget {
                       padding: const EdgeInsets.only(top: 2),
                       child: Row(
                         children: [
-                          Icon(Icons.call_split, size: 12, color: c.inkSoft),
+                          Icon(Icons.hexagon_outlined, size: 12, color: c.inkSoft),
                           const SizedBox(width: S.xxs),
                           Text('小步骤 ${progress[0]}/${progress[1]}',
                               style: TextStyle(
