@@ -524,7 +524,7 @@ class _FocusHero extends StatelessWidget {
         children: [
           if (it == null) ...[
             // 空态：一句大标语把决策压到最小。
-            Text('今天只做\n一件就好',
+            Text('只专注一件事',
                 style: TextStyle(
                     fontSize: 32,
                     height: 1.25,
@@ -882,16 +882,8 @@ class _TimeChipState extends State<_TimeChip> {
       if (mounted) setState(() => _flash = false);
     });
     final d0 = DateTime.fromMillisecondsSinceEpoch(widget.it.dueTime);
-    final c = ThemeTokens.of(context);
-    final t = await showTimePicker(
-      context: context,
-      initialTime: TimeOfDay.fromDateTime(d0),
-      builder: (_, child) => Theme(
-        data: Theme.of(context)
-            .copyWith(colorScheme: Theme.of(context).colorScheme.copyWith(primary: c.accent)),
-        child: child!,
-      ),
-    );
+    final t = await showStartTimePicker(context,
+        initial: TimeOfDay.fromDateTime(d0));
     if (t == null) return;
     widget.it.dueTime = DateTime(d0.year, d0.month, d0.day, t.hour, t.minute)
         .millisecondsSinceEpoch;

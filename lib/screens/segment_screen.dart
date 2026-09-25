@@ -126,7 +126,7 @@ class _SegmentScreenState extends State<SegmentScreen> {
             Expanded(
               child: list.isEmpty
                   ? EmptyView(
-                      icon: Icons.call_split,
+                      icon: Icons.alt_route,
                       text: '在下面写点什么，自动拆成几条再捋',
                     )
                   : ListView.builder(
@@ -244,12 +244,10 @@ class _InboxCard extends StatelessWidget {
     );
     if (d == null) return;
     if (!context.mounted) return;
-    final t = await showTimePicker(
-      context: context,
-      initialTime: it.dueTime > 0
-          ? TimeOfDay.fromDateTime(DateTime.fromMillisecondsSinceEpoch(it.dueTime))
-          : TimeOfDay.now(),
-    );
+    final t = await showStartTimePicker(context,
+        initial: it.dueTime > 0
+            ? TimeOfDay.fromDateTime(DateTime.fromMillisecondsSinceEpoch(it.dueTime))
+            : TimeOfDay.now());
     if (t == null) return;
     it.kind = Item.kindTask;
     it.dueTime = DateTime(d.year, d.month, d.day, t.hour, t.minute).millisecondsSinceEpoch;
@@ -330,7 +328,7 @@ class _InboxCard extends StatelessWidget {
                     Navigator.of(context, rootNavigator: true).push(
                         MaterialPageRoute(builder: (_) => MindMapScreen(rootId: it.id)));
                   }),
-                  IconBtn(Icons.call_split, tip: '捋一捋', color: c.accent,
+                  IconBtn(Icons.alt_route, tip: '捋一捋', color: c.accent,
                       onTap: () => _split(context)),
                   IconBtn(Icons.edit_outlined, tip: '编辑', color: c.inkSoft,
                       onTap: () => showTextEdit(context, it, onSaved: onChange)),

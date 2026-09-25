@@ -97,6 +97,7 @@ class _MindMapScreenState extends State<MindMapScreen> {
                 count: total,
                 onBack: () => Navigator.pop(context),
                 actions: [
+                  IconBtn(Icons.add, tip: '新建导图', onTap: _newMap),
                   if (_delta.isNotEmpty)
                     IconBtn(Icons.restart_alt, tip: '重排', onTap: () => setState(() => _delta.clear())),
                 ]),
@@ -500,6 +501,17 @@ class _MindMapScreenState extends State<MindMapScreen> {
       );
     });
     if (mounted) setState(() {});
+  }
+
+  /// 新建导图：从零起一个空根节点，进编辑态直接写标题。
+  Future<void> _newMap() async {
+    final root = Item()..kind = Item.kindInbox..title = '';
+    await StartStore.I.put(root);
+    if (!mounted) return;
+    // 替换当前导图页为新根节点（旧页出栈）。
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (_) => MindMapScreen(rootId: root.id)),
+    );
   }
 }
 

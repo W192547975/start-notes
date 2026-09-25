@@ -427,3 +427,142 @@ class PageHead extends StatelessWidget {
     );
   }
 }
+
+/// 自定义时间选择面板：替代原生 showTimePicker。
+/// 上滑选小时/分钟，下两个大按钮确认/取消，风格统一番茄红。
+Future<TimeOfDay?> showStartTimePicker(BuildContext context,
+    {TimeOfDay? initial}) async {
+  return showStartSheet<TimeOfDay>(context, (ctx) => _TimePickerSheet(initial: initial));
+}
+
+class _TimePickerSheet extends StatefulWidget {
+  final TimeOfDay? initial;
+  const _TimePickerSheet({this.initial});
+  @override
+  State<_TimePickerSheet> createState() => _TimePickerSheetState();
+}
+
+class _TimePickerSheetState extends State<_TimePickerSheet> {
+  late int _h;
+  late int _m;
+  final _hc = FixedExtentScrollController();
+  final _mc = FixedExtentScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    final now = widget.initial ?? TimeOfDay.now();
+    _h = now.hour;
+    _m = now.minute;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _hc.jumpToItem(_h);
+      _mc.jumpToItem(_m);
+    });
+  }
+
+  @override
+  void dispose() {
+    _hc.dispose();
+    _mc.dispose();
+    super.dispose();
+  }
+
+  Widget _wheel(FixedExtentScrollController ctl, int count, int cur,
+      ValueChanged<int> onSel) {
+    final c = ThemeTokens.of(context);
+    return SizedBox(
+      height: 160,
+      child: ListWheelScrollView.useDelegate(
+        controller: ctl,
+        itemExtent: 40,
+        perspective: 0.005,
+        physics: const FixedExtentScrollPhysics(),
+        onSelectedItemChanged: onSel,
+        childDelegate: ListWheelChildBuilderDelegate(
+          childCount: count,
+          builder: (_, i) {
+            final on = i == cur;
+            return Center(
+              child: Text(
+                i.toString().padLeft(2, '0'),
+                style: TextStyle(
+                  fontSize: on ? 22 : S.textMd,
+                  fontWeight: on ? FontWeight.bold : FontWeight.normal,
+                  color: on ? c.accent : c.inkSoft,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeTokens.of(context);
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(S.md),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _wheel(_hc, 24, _h, (v) => setState(() => _h = v)),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: S.sm),
+                  child: Text(':',
+                      style: TextStyle(
+                          fontSize: 22, fontWeight: FontWeight.bold, color: c.ink)),
+                ),
+                _wheel(_mc, 60, _m, (v) => setState(() => _m = v)),
+              ],
+            ),
+            const SizedBox(height: S.md),
+            Row(
+              children: [
+                Expanded(
+                  child: Pressable(
+                    onTap: () => Navigator.pop(context),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: S.sm),
+                      decoration: BoxDecoration(
+                          color: c.cardAlt,
+                          borderRadius: BorderRadius.circular(999)),
+                      child: Center(
+                          child: Text('取消',
+                              style: TextStyle(
+                                  fontSize: S.textMd, color: c.ink))),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: S.sm),
+                Expanded(
+                  child: Pressable(
+                    onTap: () =>
+                        Navigator.pop(context, TimeOfDay(hour: _h, minute: _m)),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: S.sm),
+                      decoration: BoxDecoration(
+                          color: c.accent,
+                          borderRadius: BorderRadius.circular(999)),
+                      child: Center(
+                          child: Text('确认',
+                              style: TextStyle(
+                                  fontSize: S.textMd,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white))),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
