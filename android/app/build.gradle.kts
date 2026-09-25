@@ -1,4 +1,4 @@
-﻿import java.util.Properties
+import java.util.Properties
 
 plugins {
     id("com.android.application")
@@ -23,7 +23,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.astart.app"
+        applicationId = "com.ndstart.app"
         minSdk = 26
         targetSdk = 34
         versionCode = 15
