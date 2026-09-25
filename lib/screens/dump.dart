@@ -102,7 +102,7 @@ class _DumpGuide extends StatelessWidget {
     const steps = [
       (Icons.edit_note, '丢', '想到什么全写下来，不用想分类'),
       (Icons.south, '倒进来', '按行和句末标点自动拆成几条'),
-      (Icons.call_split, '捋一捋', '逐条分到念头、日程或随手做'),
+      (Icons.alt_route, '捋一捋', '逐条分到日程或随手做'),
     ];
     return Center(
       child: Padding(

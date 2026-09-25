@@ -48,7 +48,7 @@ class StatsScreen extends StatelessWidget {
             ],
           ),
           const SizedBox(height: S.xl),
-          Text('近 7 天',
+          Text('专注分钟',
               style: TextStyle(
                   fontSize: S.textSm, color: c.inkSoft, fontWeight: FontWeight.bold)),
           const SizedBox(height: S.md),
@@ -66,7 +66,7 @@ class StatsScreen extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               for (var i = 0; i < 7; i++)
-                Text('${i == 6 ? '今天' : '-${6 - i}'}',
+                Text('${i == 6 ? '' : '-${6 - i}'}',
                     style: TextStyle(
                         fontSize: S.textSm,
                         color: c.inkSoft,

@@ -278,7 +278,7 @@ class _RootState extends State<Root> {
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
               _navKey(c, Icons.search_outlined, _last == 0, _openSearch),
-              _navKey(c, Icons.call_split, _last == 1, _openSegment),
+              _navKey(c, Icons.alt_route, _last == 1, _openSegment),
               _funcButton,
               _navKey(c, Icons.timer_outlined, _last == 3, _openFocus),
               _navKey(c, Icons.bar_chart_outlined, _last == 4, _openStats),

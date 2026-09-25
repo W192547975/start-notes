@@ -293,11 +293,9 @@ class _EditorSheetState extends State<_EditorSheet> {
       if (auto) Navigator.pop(context);
       return;
     }
-    final t = await showTimePicker(
-      context: context,
-      initialTime: TimeOfDay.fromDateTime(
-          it.dueTime > 0 ? DateTime.fromMillisecondsSinceEpoch(widget.item.dueTime) : now),
-    );
+    final t = await showStartTimePicker(context,
+        initial: TimeOfDay.fromDateTime(
+            it.dueTime > 0 ? DateTime.fromMillisecondsSinceEpoch(widget.item.dueTime) : now));
     if (t == null || !mounted) {
       if (auto) Navigator.pop(context);
       return;
