@@ -1,0 +1,3241 @@
+﻿启序待办管理软件 V2.0 源程序鉴别材料 第 1 页（共 60 页）
+=================================================================
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
+import 'ai/assist.dart';
+import 'data/item.dart';
+import 'data/store.dart';
+import 'channels/native.dart';
+import 'screens/dump.dart';
+import 'screens/focus.dart';
+import 'screens/home.dart';
+import 'screens/manual.dart';
+import 'screens/search.dart';
+import 'screens/segment_screen.dart';
+import 'screens/splash.dart';
+import 'screens/stats.dart';
+import 'screens/steps.dart';
+import 'theme/tokens.dart';
+import 'utils/update_checker.dart';
+import 'widgets/ui.dart';
+import 'widgets/voice_sheet.dart';
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  // 全面屏：内容延伸到状态栏/手势条后面，系统栏全透明，界面用 SafeArea 让位。
+  await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+    statusBarColor: Colors.transparent,
+    systemNavigationBarColor: Colors.transparent,
+    systemNavigationBarDividerColor: Colors.transparent,
+    systemNavigationBarContrastEnforced: false,
+  ));
+  await StartStore.I.init();
+  runApp(const StartApp());
+}
+
+class StartApp extends StatefulWidget {
+  const StartApp({super.key});
+
+  static final navigatorKey = GlobalKey<NavigatorState>();
+  static final messengerKey = GlobalKey<ScaffoldMessengerState>();
+
+  @override
+  State<StartApp> createState() => _StartAppState();
+}
+
+class _StartAppState extends State<StartApp> {
+  @override
+  void initState() {
+
+
+启序待办管理软件 V2.0 源程序鉴别材料 第 2 页（共 60 页）
+=================================================================
+    super.initState();
+    // 启动后静默检查更新，有新版自动提醒。
+    Future.delayed(const Duration(seconds: 2), _autoUpdateCheck);
+  }
+
+  Future<void> _autoUpdateCheck() async {
+    final u = await UpdateChecker.check();
+    if (u == null || !mounted) return;
+    final ctx = StartApp.navigatorKey.currentContext;
+    if (ctx == null || !ctx.mounted) return;
+    final c = ThemeTokens.of(ctx);
+    await showDialog<void>(
+      context: ctx,
+      builder: (_) => AlertDialog(
+        backgroundColor: c.card,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(S.radius)),
+        title: Text('发现新版本 v${u.version}',
+            style: TextStyle(color: c.ink, fontSize: S.textLg, fontWeight: FontWeight.bold)),
+        content: Text('去仓库下载最新安装包',
+            style: TextStyle(color: c.inkSoft, fontSize: S.textMd)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('忽略', style: TextStyle(color: c.inkSoft)),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              Native.openUrl(u.url);
+            },
+            child: Text('下载', style: TextStyle(color: c.accent, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: StartStore.I,
+      builder: (context, _) {
+        final s = StartStore.I;
+        final darkMode = s.prefInt('dark_mode', 0);
+        final themeMode = switch (darkMode) {
+
+
+启序待办管理软件 V2.0 源程序鉴别材料 第 3 页（共 60 页）
+=================================================================
+          1 => ThemeMode.dark,
+          2 => ThemeMode.light,
+          _ => ThemeMode.system,
+        };
+        final scale = s.prefDouble('font_scale', 1.0);
+        final platformDark =
+            WidgetsBinding.instance.platformDispatcher.platformBrightness == Brightness.dark;
+        final isDark =
+            themeMode == ThemeMode.dark || (themeMode == ThemeMode.system && platformDark);
+        final c = isDark ? C.dark : C.light;
+
+        return ThemeTokens(
+          c: c,
+          child: MaterialApp(
+            title: '启序',
+            debugShowCheckedModeBanner: false,
+            navigatorKey: StartApp.navigatorKey,
+            scaffoldMessengerKey: StartApp.messengerKey,
+            theme: AppThemes.build(C.light, Brightness.light),
+            darkTheme: AppThemes.build(C.dark, Brightness.dark),
+            themeMode: themeMode,
+            builder: (context, child) => MediaQuery(
+              data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(scale)),
+              // 全面屏：状态栏/手势条图标色随明暗主题。
+              child: AnnotatedRegion<SystemUiOverlayStyle>(
+                value: SystemUiOverlayStyle(
+                  statusBarColor: Colors.transparent,
+                  statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
+                  systemNavigationBarColor: Colors.transparent,
+                  systemNavigationBarIconBrightness:
+                      isDark ? Brightness.light : Brightness.dark,
+                  systemNavigationBarDividerColor: Colors.transparent,
+                  systemNavigationBarContrastEnforced: false,
+                ),
+                // 全局撤销条 + 拖拽落点底座：挂在 navigator 之上，任何页面都能用。
+                // 拖拽激活时整个界面上移，红色垃圾桶区贴屏幕最底部出现，不遮内容。
+                child: ValueListenableBuilder<bool>(
+                  valueListenable: DragDockBus.active,
+                  child: child,
+                  builder: (_, dragging, nav) {
+                    final lift = dragging
+                        ? 72 + S.lg + MediaQuery.viewPaddingOf(context).bottom
+                        : 0.0;
+                    // 纸色铺底：界面上移后露出的区域不是黑边。
+                    return ColoredBox(
+                      color: c.paper,
+                      child: Stack(
+                        children: [
+                          AnimatedPadding(
+                            duration: const Duration(milliseconds: 180),
+
+
+启序待办管理软件 V2.0 源程序鉴别材料 第 4 页（共 60 页）
+=================================================================
+                            curve: Curves.easeOut,
+                            padding: EdgeInsets.only(bottom: lift),
+                            child: nav!,
+                          ),
+                          const UndoHost(),
+                          const _GlobalDragDock(),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+            home: const BootGate(),
+            onGenerateRoute: (settings) {
+              switch (settings.name) {
+                case '/steps':
+                  return MaterialPageRoute(
+                    builder: (_) => StepsScreen(taskId: settings.arguments as int),
+                  );
+                case '/focus':
+                  final arg = settings.arguments;
+                  return MaterialPageRoute(
+                    builder: (_) => FocusScreen(taskId: arg is int ? arg : null),
+                  );
+              }
+              return null;
+            },
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// 全局拖拽落点底座：拖到「移到这删除」= 删除（可撤销）；
+/// 拖到「开成导图」= 以该条目标题为根新建思维导图并打开（原条目保留不动）。
+class _GlobalDragDock extends StatelessWidget {
+  const _GlobalDragDock();
+
+  /// 等拖拽彻底结束（红区完全收起）后再弹撤销条，避免与红区同屏两条并存。
+  static void _showUndoWhenIdle(String text, Future<void> Function() onUndo) {
+    void tryShow() {
+      if (DragDockBus.active.value) return;
+      DragDockBus.active.removeListener(tryShow);
+      final ctx = StartApp.navigatorKey.currentContext;
+      if (ctx != null && ctx.mounted) {
+        UndoHost.show(ctx, text, () async => onUndo());
+      }
+    }
+
+
+启序待办管理软件 V2.0 源程序鉴别材料 第 5 页（共 60 页）
+=================================================================
+
+    if (!DragDockBus.active.value) {
+      tryShow();
+    } else {
+      DragDockBus.active.addListener(tryShow);
+    }
+  }
+
+  static Future<void> _toTrash(int id) async {
+    final s = StartStore.I;
+    // 多选整批拖入：一次删除、一次撤销（防误删 6 秒窗口由 UndoHost 保证）。
+    final ids = DragDockBus.pendingIds;
+    DragDockBus.pendingIds = null;
+    if (ids != null && ids.length > 1) {
+      final snap = await s.deleteAll(ids);
+      _showUndoWhenIdle('删了 ${ids.length} 条', () async => s.restoreJson(snap));
+      return;
+    }
+    if (s.byId(id) == null) return;
+    final removed = s.delete(id, cascade: true);
+    _showUndoWhenIdle('已删除', () async => s.restore(removed));
+  }
+
+  @override
+  Widget build(BuildContext context) => const DragDock(onTrash: _toTrash);
+}
+
+/// 启动门：先播放开机动画，结束后进协议门与主界面。
+class BootGate extends StatefulWidget {
+  const BootGate({super.key});
+
+  @override
+  State<BootGate> createState() => _BootGateState();
+}
+
+class _BootGateState extends State<BootGate> {
+  bool _splash = true;
+
+  @override
+  Widget build(BuildContext context) {
+    return _splash
+        ? SplashScreen(onDone: () => setState(() => _splash = false))
+        : const EulaGate(child: Root());
+  }
+}
+
+/// 首次启动/协议更新时先同意再进主界面。
+class EulaGate extends StatefulWidget {
+  final Widget child;
+  const EulaGate({super.key, required this.child});
+
+
+启序待办管理软件 V2.0 源程序鉴别材料 第 6 页（共 60 页）
+=================================================================
+
+  @override
+  State<EulaGate> createState() => _EulaGateState();
+}
+
+class _EulaGateState extends State<EulaGate> {
+  bool? _ok;
+
+  @override
+  void initState() {
+    super.initState();
+    _ok = StartStore.I.prefInt('eula_accepted_version', 0) >= StartStore.eulaVersion;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_ok == true) return widget.child;
+    return FirstRunScreen(onAccept: () async {
+      await StartStore.I.setPref('eula_accepted_version', StartStore.eulaVersion);
+      setState(() => _ok = true);
+    });
+  }
+}
+
+class Root extends StatefulWidget {
+  const Root({super.key});
+
+  @override
+  State<Root> createState() => _RootState();
+}
+
+/// 主骨架：首页是主体（老版 TodayScreen），底栏 5 键切换 section。
+/// 底栏：搜索 · 捋一捋 · 动手吧 · 专注 · 统计。
+/// body 内嵌一个 Navigator：首页是其根路由，section 页推到该嵌套 navigator
+/// （只占 body 区，Scaffold.bottomNavigationBar 始终常驻——老版 selectNav 行为）。
+/// 点键后该键保持番茄红，持续到另一个键被点击。切换 section 用 pushReplacement 防栈堆积。
+class _RootState extends State<Root> {
+  /// 最后按下的底栏键索引：0念头 1捋一捋 2功能键 3专注 4统计。-1=未按过（在首页）。
+  int _last = -1;
+  final GlobalKey _funcKey = GlobalKey();
+  final GlobalKey<NavigatorState> _bodyNav = GlobalKey<NavigatorState>();
+  late final NavigatorObserver _navObserver = _HomeObserver(() {
+    if (mounted) setState(() => _last = -1);
+  });
+
+  /// 跳转 section：在首页则 push，已在某 section 则 pushReplacement 换页。
+  /// 用快速淡入替代默认上滑动画，避免切换时白屏卡顿。
+  void _goto(Widget page, int idx) {
+    setState(() => _last = idx);
+    final nav = _bodyNav.currentState;
+
+
+启序待办管理软件 V2.0 源程序鉴别材料 第 7 页（共 60 页）
+=================================================================
+    if (nav == null) return;
+    final route = PageRouteBuilder(
+      transitionDuration: const Duration(milliseconds: 150),
+      reverseTransitionDuration: const Duration(milliseconds: 120),
+      pageBuilder: (_, __, ___) => page,
+      transitionsBuilder: (_, anim, __, child) => FadeTransition(
+        opacity: CurvedAnimation(parent: anim, curve: Curves.easeOut),
+        child: child,
+      ),
+    );
+    if (nav.canPop()) {
+      nav.pushReplacement(route);
+    } else {
+      nav.push(route);
+    }
+  }
+
+  /// 短按功能键 = 动手吧(速记倒进来)文字输入。
+  void _openDumpText() => _goto(const DumpScreen(), 2);
+
+  /// 长按功能键 = 语音速记。识别完进动手吧输入条复核；开了 AI 可直接整批结构化入库。
+  Future<void> _startVoice() async {
+    final r = await showVoiceSheet(context);
+    if (r == null) return;
+    final text = (r['text'] as String? ?? '').trim();
+    if (text.isEmpty) return;
+    if (r['action'] == 'ai' && AiConfig.ready) {
+      await _runAiOrganize(text);
+    } else {
+      _goto(DumpScreen(initial: text), 2);
+    }
+  }
+
+  /// 语音 → AI 解析 → 整批落库，带 loading 与整批撤销。
+  Future<void> _runAiOrganize(String text) async {
+    final ctx = StartApp.navigatorKey.currentContext;
+    if (ctx == null) return;
+    unawaited(showDialog<void>(
+      context: ctx,
+      barrierDismissible: false,
+      builder: (_) => Center(
+        child: Container(
+          padding: const EdgeInsets.all(S.lg),
+          decoration: BoxDecoration(
+            color: ThemeTokens.of(ctx).card,
+            borderRadius: BorderRadius.circular(S.radius),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+
+
+启序待办管理软件 V2.0 源程序鉴别材料 第 8 页（共 60 页）
+=================================================================
+              SizedBox(
+                width: 26,
+                height: 26,
+                child: CircularProgressIndicator(
+                    strokeWidth: 2.5, color: ThemeTokens.of(ctx).accent),
+              ),
+              const SizedBox(height: S.sm),
+              Text('AI 正在整理…',
+                  style: TextStyle(
+                      fontSize: S.textSm, color: ThemeTokens.of(ctx).inkSoft)),
+            ],
+          ),
+        ),
+      ),
+    ));
+    try {
+      final result = await Assistant.handle(text);
+      final mctx = StartApp.navigatorKey.currentContext;
+      if (mctx != null && mctx.mounted) Navigator.of(mctx, rootNavigator: true).pop();
+      if (result.count == 0) {
+        StartApp.messengerKey.currentState
+            ?.showSnackBar(const SnackBar(content: Text('没听出要做的事，换个说法试试')));
+        return;
+      }
+      final uctx = StartApp.navigatorKey.currentContext;
+      if (uctx != null && uctx.mounted) {
+        UndoHost.show(uctx, 'AI 整理了 ${result.count} 条',
+            () async => StartStore.I.restoreJson(result.snapshot));
+      }
+    } catch (e) {
+      final mctx = StartApp.navigatorKey.currentContext;
+      if (mctx != null && mctx.mounted) Navigator.of(mctx, rootNavigator: true).pop();
+      StartApp.messengerKey.currentState?.showSnackBar(
+        SnackBar(content: Text('AI 没连上：$e')),
+      );
+    }
+  }
+
+  void _openSearch() => _goto(const SearchScreen(), 0);
+  void _openSegment() => _goto(const SegmentScreen(), 1);
+  void _openFocus() => _goto(const FocusScreen(showBack: true), 3);
+  void _openStats() => _goto(const StatsScreen(), 4);
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeTokens.of(context);
+    return Scaffold(
+      body: WillPopScope(
+        onWillPop: () async {
+          final nav = _bodyNav.currentState;
+
+
+启序待办管理软件 V2.0 源程序鉴别材料 第 9 页（共 60 页）
+=================================================================
+          if (nav != null && nav.canPop()) {
+            setState(() => _last = -1);
+            nav.pop();
+            return false;
+          }
+          return true;
+        },
+        child: Stack(
+          children: [
+            Navigator(
+              key: _bodyNav,
+              observers: [_navObserver],
+              onGenerateRoute: (_) => MaterialPageRoute(
+                builder: (_) => const HomeScreen(),
+              ),
+            ),
+          ],
+        ),
+      ),
+      bottomNavigationBar: SafeArea(
+        child: SizedBox(
+          height: 64,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _navKey(c, Icons.search_outlined, _last == 0, _openSearch),
+              _navKey(c, Icons.alt_route, _last == 1, _openSegment),
+              _funcButton,
+              _navKey(c, Icons.timer_outlined, _last == 3, _openFocus),
+              _navKey(c, Icons.bar_chart_outlined, _last == 4, _openStats),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _navKey(C c, IconData icon, bool selected, VoidCallback onTap) {
+    return Pressable(
+      scale: 0.9,
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: S.sm, vertical: S.sm),
+        child: Icon(icon, size: 24, color: selected ? c.accent : c.inkSoft),
+      ),
+    );
+  }
+
+  /// 中央红钮 = 动手吧。短按=文字输入，长按=语音速记。全局无字，纯图标。
+  Widget get _funcButton {
+
+
+启序待办管理软件 V2.0 源程序鉴别材料 第 10 页（共 60 页）
+=================================================================
+    final c = ThemeTokens.of(context);
+    return GestureDetector(
+      key: _funcKey,
+      behavior: HitTestBehavior.opaque,
+      onTap: _openDumpText,
+      onLongPress: _startVoice,
+      child: Container(
+        width: 44,
+        height: 44,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: c.accent,
+          border: Border.all(color: c.card, width: 2),
+          boxShadow: [
+            BoxShadow(color: c.accent.withValues(alpha: 0.4), blurRadius: 10, spreadRadius: 1),
+          ],
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(6),
+          child: Image.asset('assets/app_icon.png', fit: BoxFit.contain),
+        ),
+      ),
+    );
+  }
+}
+
+/// 监听嵌套 navigator：pop 回到首页根路由时重置底栏高亮（_last=-1）。
+class _HomeObserver extends NavigatorObserver {
+  _HomeObserver(this.onHome);
+  final VoidCallback onHome;
+
+  @override
+  void didPop(Route<dynamic>? route, Route<dynamic>? previousRoute) {
+    if (previousRoute?.isFirst ?? false) onHome();
+  }
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    // pushReplacement 后栈底仍是首页，无需处理。
+  }
+}
+import 'dart:convert';
+
+import 'package:http/http.dart' as http;
+
+import '../data/item.dart';
+import '../data/store.dart';
+
+/// 智能助手配置：OpenAI 兼容协议（chat/completions），可接任意兼容端点。
+/// 所有配置只存在本机 start_prefs；功能默认关闭，由用户在设置里手动开启。
+
+
+启序待办管理软件 V2.0 源程序鉴别材料 第 11 页（共 60 页）
+=================================================================
+class AiConfig {
+  AiConfig._();
+
+  /// (展示名, baseUrl, 默认模型)。前两个为注册即送免费额度的公开服务。
+  static const presets = <(String, String, String)>[
+    ('智谱 GLM-4-Flash（免费）', 'https://open.bigmodel.cn/api/paas/v4', 'glm-4-flash'),
+    ('硅基流动 Qwen2.5-7B（免费）', 'https://api.siliconflow.cn/v1',
+        'Qwen/Qwen2.5-7B-Instruct'),
+    ('自定义端点', '', ''),
+  ];
+
+  static bool get on => StartStore.I.prefBool('ai_on', false);
+  static String get base => StartStore.I.prefStr('ai_base');
+  static String get key => StartStore.I.prefStr('ai_key');
+  static String get model => StartStore.I.prefStr('ai_model');
+
+  static bool get ready => on && base.isNotEmpty && model.isNotEmpty && key.isNotEmpty;
+
+  static Future<void> setOn(bool v) => StartStore.I.setPref('ai_on', v);
+  static Future<void> setBase(String v) => StartStore.I.setPref('ai_base', v.trim());
+  static Future<void> setKey(String v) => StartStore.I.setPref('ai_key', v.trim());
+  static Future<void> setModel(String v) => StartStore.I.setPref('ai_model', v.trim());
+}
+
+class AiClient {
+  AiClient._();
+
+  /// 单轮对话，返回模型文本。端点/模型/密钥取自 [AiConfig]。
+  static Future<String> chat(String user, {String? system, double temperature = 0.2}) async {
+    final uri = Uri.parse('${AiConfig.base.replaceAll(RegExp(r'/+$'), '')}/chat/completions');
+    final body = jsonEncode({
+      'model': AiConfig.model,
+      'temperature': temperature,
+      'messages': [
+        if (system != null) {'role': 'system', 'content': system},
+        {'role': 'user', 'content': user},
+      ],
+    });
+    final resp = await http
+        .post(
+          uri,
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ${AiConfig.key}',
+          },
+          body: body,
+        )
+        .timeout(const Duration(seconds: 20));
+    if (resp.statusCode != 200) {
+      throw Exception('HTTP ${resp.statusCode}: ${resp.body}');
+
+
+启序待办管理软件 V2.0 源程序鉴别材料 第 12 页（共 60 页）
+=================================================================
+    }
+    final root = jsonDecode(utf8.decode(resp.bodyBytes)) as Map<String, dynamic>;
+    final choices = root['choices'] as List<dynamic>?;
+    if (choices == null || choices.isEmpty) throw Exception('返回为空');
+    return ((choices.first as Map<String, dynamic>)['message']
+            as Map<String, dynamic>)['content'] as String? ??
+        '';
+  }
+
+  /// 连通性自检：发一句最短的对话。
+  static Future<String> ping() async => chat('ping', temperature: 0);
+}
+
+/// 解析出的动作：随手做 / 日程 / 念头 / 无。
+class AssistIntent {
+  final String action; // task | schedule | idea | none
+  final String title;
+  final int dueMs;
+  const AssistIntent(this.action, this.title, this.dueMs);
+
+  bool get valid => action != 'none' && title.trim().isNotEmpty;
+}
+
+/// 一批结构化结果：落库条目数 + 落库前快照（供整批撤销）。
+class ApplyResult {
+  final int count;
+  final String snapshot;
+  const ApplyResult(this.count, this.snapshot);
+}
+
+class Assistant {
+  Assistant._();
+
+  /// 2.0 重构：一段语音/文字可能含多件事，统一解析为动作数组。
+  static const _sysPrompt = '''
+你是一个待办 App 的意图解析器。把用户的一段话解析为若干个动作，只输出 JSON 数组，禁止输出任何解释或 Markdown 代码块。
+输出格式：[{"action":"task|idea|schedule|none","title":"精简后的事项名","due":"yyyy-MM-dd HH:mm"}]
+规则：
+- schedule：话里有明确日期或时刻（明天、下周一、晚上八点等），due 必须换算为绝对时间；
+- idea：灵感、备忘、参考资料、还没决定要不要做的事；
+- task：其余打算做但没有明确时间的事；
+- none：与待办完全无关的寒暄、语气词，单独成段时才用；
+- title 用简短中文动宾短语，去掉语气词，不超过 20 个字；
+- 拿不准具体时间时按 task 处理，due 留空；
+- 没有任何有效事项时输出 []。''';
+
+  /// 自然语言 → 结构化意图列表。模型异常时抛出，调用方自行提示。
+  static Future<List<AssistIntent>> parseList(String spoken) async {
+    final now = DateTime.now();
+    final stamp =
+
+
+启序待办管理软件 V2.0 源程序鉴别材料 第 13 页（共 60 页）
+=================================================================
+        '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')} '
+        '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}，星期${'一 二三四五六日'[now.weekday - 1]}';
+    final raw = await AiClient.chat('当前时间：$stamp\n用户说：$spoken', system: _sysPrompt);
+    final match = RegExp(r'\[.*\]', dotAll: true).firstMatch(raw);
+    if (match == null) throw Exception('模型未返回 JSON 数组');
+    final arr = jsonDecode(match.group(0)!) as List<dynamic>;
+    return arr.whereType<Map<String, dynamic>>().map((m) {
+      final action = (m['action'] as String? ?? 'none').trim();
+      final title = (m['title'] as String? ?? '').trim();
+      var dueMs = 0;
+      final due = (m['due'] as String? ?? '').trim();
+      if (due.isNotEmpty) {
+        final t = DateTime.tryParse(due.replaceAll(' ', 'T'));
+        if (t != null) dueMs = t.millisecondsSinceEpoch;
+      }
+      final normalized = {'task', 'schedule', 'idea'}.contains(action) ? action : 'none';
+      return AssistIntent(normalized, title, dueMs);
+    }).toList();
+  }
+
+  /// 整批落库：先快照（供撤销），日程自动开提醒，念头走 rank 队尾。
+  static Future<ApplyResult> applyList(List<AssistIntent> intents) async {
+    final s = StartStore.I;
+    final snap = s.exportJson();
+    final valid = intents.where((e) => e.valid).toList();
+    final now = DateTime.now().millisecondsSinceEpoch;
+    for (var i = 0; i < valid.length; i++) {
+      final intent = valid[i];
+      final it = Item(
+        kind: intent.action == 'idea' ? Item.kindIdea : Item.kindTask,
+        title: intent.title,
+        created: now + i,
+      );
+      if (intent.action == 'schedule' && intent.dueMs > 0) {
+        it.dueTime = intent.dueMs;
+        it.alarm = true;
+      }
+      await s.put(it, touchRank: it.isIdea);
+    }
+    return ApplyResult(valid.length, snap);
+  }
+
+  /// 一步到位：说话/文字 → 解析 → 整批落库。
+  static Future<ApplyResult> handle(String text) async => applyList(await parseList(text));
+}
+import 'dart:async';
+import 'dart:convert';
+
+import 'package:flutter/services.dart';
+import 'package:vosk_flutter/vosk_flutter.dart';
+
+
+启序待办管理软件 V2.0 源程序鉴别材料 第 14 页（共 60 页）
+=================================================================
+
+/// 原生偏好读写：直接操作同名 SharedPreferences，保证与老版数据兼容。
+/// 注意：不能用 shared_preferences 插件（它会给键加 "flutter." 前缀）。
+class Prefs {
+  static const _ch = MethodChannel('start/prefs');
+
+  static Future<Map<String, Object?>> getAll([String name = 'start_prefs']) async {
+    final r = await _ch.invokeMethod<dynamic>('getAll', {'name': name});
+    return (r as Map<Object?, Object?>? ?? {}).cast<String, Object?>();
+  }
+
+  static Future<void> set(String key, Object? value, [String name = 'start_prefs']) =>
+      _ch.invokeMethod('set', {'name': name, 'key': key, 'value': value});
+}
+
+/// 系统能力：路径 / 震动 / 屏幕常亮 / 分享接收 / 分词 / 音效 / 任意门动作（拨号、打开链接）。
+class Native {
+  static const _sys = MethodChannel('start/system');
+  static const _seg = MethodChannel('start/segment');
+  static const _snd = MethodChannel('start/sound');
+
+  static Future<String> filesDir() async =>
+      (await _sys.invokeMethod<String>('filesDir')) ?? '';
+
+  /// 包版本名（PackageManager 实时读，自动跟随 build.gradle）。
+  static Future<String?> versionName() => _sys.invokeMethod<String?>('versionName');
+
+  /// 把日程写入手机日历，返回 eventId（0=失败/无权限，调用方可退回系统日历新建页）。
+  static Future<int> calendarInsert(String title, int ms) async =>
+      (await _sys.invokeMethod<int>('calendarInsert', {'title': title, 'ms': ms})) ?? 0;
+
+  static Future<void> vibrate([int ms = 20]) => _sys.invokeMethod('vibrate', {'ms': ms});
+
+  static Future<void> keepScreenOn(bool on) => _sys.invokeMethod('keepScreenOn', {'on': on});
+
+  static Future<String?> initialShare() => _sys.invokeMethod<String?>('initialShare');
+
+  /// 任意门：拨号 / 打开链接（走系统 Intent，不联网）。
+  static Future<void> dial(String number) =>
+      _sys.invokeMethod('openAction', {'kind': 'dial', 'data': number});
+  static Future<void> openUrl(String url) =>
+      _sys.invokeMethod('openAction', {'kind': 'url', 'data': url});
+
+  /// 绑定手机日历与系统闹钟：用系统 Intent，不申请额外权限、不联网。
+  static Future<void> addToCalendar(String title, int ms) =>
+      _sys.invokeMethod('calendar', {'title': title, 'ms': ms});
+  static Future<void> setAlarm(String title, int ms) =>
+      _sys.invokeMethod('alarm', {'title': title, 'ms': ms});
+
+  /// 本地到点提醒：AlarmManager 精确闹钟 + 悬浮通知，无需第三方推送。
+
+
+启序待办管理软件 V2.0 源程序鉴别材料 第 15 页（共 60 页）
+=================================================================
+  static Future<void> scheduleNotify(int id, String label, int whenMs) =>
+      _sys.invokeMethod('notifySchedule', {'id': id, 'label': label, 'when': whenMs});
+  static Future<void> cancelNotify(int id) =>
+      _sys.invokeMethod('notifyCancel', {'id': id});
+
+  /// 后台保活常驻通知开关（true=显示"今日待办守护中"，false=移除）。
+  static Future<void> setKeepAlive(bool on) =>
+      _sys.invokeMethod('setKeepAlive', {'on': on});
+
+  /// 读取今日手机日历事件（移植自老版 Cal.today）。
+  /// 返回 [{id,title,begin,end,calName}]。无权限时返回空并触发系统授权弹窗。
+  static Future<List<Map<String, Object?>>> calendarToday() async {
+    final r = await _sys.invokeMethod<List<Object?>>('calendarToday');
+    return (r ?? []).map((e) {
+      final m = (e as Map<Object?, Object?>).cast<String, Object?>();
+      return {
+        'id': (m['id'] as num?)?.toInt() ?? 0,
+        'title': (m['title'] as String?) ?? '',
+        'begin': (m['begin'] as num?)?.toInt() ?? 0,
+        'end': (m['end'] as num?)?.toInt() ?? 0,
+        'calName': (m['calName'] as String?) ?? '',
+      };
+    }).toList();
+  }
+
+  /// 词级分词（ICU 词典，BreakIterator Locale.CHINA），返回去掉首尾标点的词列表。
+  static Future<List<String>> words(String text) async {
+    final r = await _seg.invokeMethod<List<Object?>>('words', {'text': text});
+    return (r ?? []).map((e) => e.toString()).toList();
+  }
+
+  static Future<void> tick(int volume) => _snd.invokeMethod('tick', {'volume': volume});
+
+  static Future<void> chime() => _snd.invokeMethod('chime');
+
+  static Future<void> stopChime() => _snd.invokeMethod('stopChime');
+
+  /// 开机铃声：原生侧按 start_prefs 里的开关与音量自行决定是否播放。
+  static Future<void> bootSound() => _snd.invokeMethod('playBoot');
+  static Future<void> previewBoot(int volume) =>
+      _snd.invokeMethod('previewBoot', {'volume': volume});
+  static Future<void> stopBoot() => _snd.invokeMethod('stopBoot');
+}
+
+/// 系统语音引擎（厂商自研离线优先），与 Vosk 互为备选。事件同 {type,text}。
+class SystemVoice {
+  static const _ch = MethodChannel('start/voice');
+  static const _evt = EventChannel('start/voice/evt');
+  static Stream<Map<String, Object?>>? _events;
+
+
+
+启序待办管理软件 V2.0 源程序鉴别材料 第 16 页（共 60 页）
+=================================================================
+  static Stream<Map<String, Object?>> events() {
+    return _events ??= _evt.receiveBroadcastStream().map((e) {
+      final m = (e as Map<Object?, Object?>).cast<String, Object?>();
+      return m;
+    });
+  }
+
+  /// [online]=true 时允许系统在线识别（更准但走网络）；默认 false 强制离线优先。
+  static Future<void> start({bool online = false}) =>
+      _ch.invokeMethod('start', {'online': online});
+  static Future<void> stop() => _ch.invokeMethod('stop');
+}
+
+/// 文件导入导出：走系统 SAF（ACTION_CREATE_DOCUMENT / ACTION_OPEN_DOCUMENT），
+/// 用户选择保存位置或文件，不联网、不需存储权限。
+class FileApi {
+  static const _ch = MethodChannel('start/file');
+
+  static Future<bool> export(String json, [String name = 'start_data.json']) async {
+    final r = await _ch.invokeMethod<bool>('export', {'json': json, 'name': name});
+    return r ?? false;
+  }
+
+  static Future<String?> import() => _ch.invokeMethod<String?>('import');
+
+  /// 选择音频文件复制进应用私有目录作为开机铃声，返回是否成功。
+  static Future<bool> pickBootSound() async =>
+      (await _ch.invokeMethod<bool>('pickBootSound')) ?? false;
+}
+
+/// 语音识别：Vosk 离线引擎（开源，中文模型，首次联网下载模型后离线识别）。
+/// 不绑谷歌、不依赖手机系统语音服务。事件流：{type: ready|partial|final|end|error, text}
+class Voice {
+  static const _modelUrl =
+      'https://alphacephei.com/vosk/models/vosk-model-small-cn-0.22.zip';
+
+  static final _plugin = VoskFlutterPlugin.instance();
+  static ModelLoader? _loader;
+  static Model? _model;
+  static Recognizer? _recognizer;
+  static SpeechService? _service;
+  static StreamSubscription? _resultSub;
+  static StreamSubscription? _partialSub;
+  static StreamController<Map<String, Object?>>? _ctl;
+  static bool _loading = false;
+
+  static Stream<Map<String, Object?>> events() {
+    _ctl ??= StreamController<Map<String, Object?>>.broadcast();
+    return _ctl!.stream;
+  }
+
+
+启序待办管理软件 V2.0 源程序鉴别材料 第 17 页（共 60 页）
+=================================================================
+
+  static Future<void> start() async {
+    if (_loading) return;
+    _loading = true;
+    _ctl ??= StreamController<Map<String, Object?>>.broadcast();
+    _ctl!.add({'type': 'ready', 'text': ''});
+
+    try {
+      if (_service == null) {
+        final dir = await Native.filesDir();
+        _loader ??= ModelLoader(modelStorage: '$dir/models');
+        final modelPath = await _loader!.loadFromNetwork(_modelUrl);
+        _model ??= await _plugin.createModel(modelPath);
+        _recognizer ??=
+            await _plugin.createRecognizer(model: _model!, sampleRate: 16000);
+        _service = await _plugin.initSpeechService(_recognizer!);
+
+        _resultSub = _service!.onResult().listen((s) {
+          try {
+            final t = jsonDecode(s)['text'] as String? ?? '';
+            if (t.isNotEmpty) _ctl!.add({'type': 'final', 'text': t});
+          } catch (_) {}
+        });
+        _partialSub = _service!.onPartial().listen((s) {
+          try {
+            final t = jsonDecode(s)['partial'] as String? ?? '';
+            if (t.isNotEmpty) _ctl!.add({'type': 'partial', 'text': t});
+          } catch (_) {}
+        });
+      }
+      await _service!.start();
+      _loading = false;
+    } catch (e) {
+      _loading = false;
+      _ctl!.add({'type': 'error', 'text': '$e'});
+    }
+  }
+
+  static Future<void> stop() async {
+    try { await _service?.stop(); } catch (_) {}
+    _ctl?.add({'type': 'end'});
+  }
+}
+/// 一条记录：任务（可打勾、可排期、可拆步骤）或念头（随手速记）。
+/// JSON 字段与老版 start_items.json 完全一致。
+class Item {
+  static const int kindTask = 0;
+  static const int kindInbox = 1; // 动手吧暂存：语音/手动倾倒进来，待捋一捋分类
+  static const int kindIdea = 2;
+
+
+
+启序待办管理软件 V2.0 源程序鉴别材料 第 18 页（共 60 页）
+=================================================================
+  int id;
+  int kind;
+  int parentId; // 所属大任务，0 表示顶层
+  String title;
+  String note;
+  bool done;
+  int dueTime; // 安排的开始时间（毫秒），0 表示随时
+  int eventId;
+  bool alarm;
+  int alarmArmed;
+  int created;
+  int updated;
+  int completedAt;
+  /// 手动排序号：0=未排过（按时间排）；拖动后按 1..n 写入，新条目取最小值-1 保持置顶。
+  int rank;
+
+  Item({
+    this.id = 0,
+    this.kind = kindTask,
+    this.parentId = 0,
+    this.title = '',
+    this.note = '',
+    this.done = false,
+    this.dueTime = 0,
+    this.eventId = 0,
+    this.alarm = false,
+    this.alarmArmed = 0,
+    this.created = 0,
+    this.updated = 0,
+    this.completedAt = 0,
+    this.rank = 0,
+  });
+
+  bool get isIdea => kind == kindIdea;
+  bool get isInbox => kind == kindInbox;
+  bool get isEmpty => title.trim().isEmpty && note.trim().isEmpty;
+
+  String get alarmLabel {
+    final t = title.trim();
+    if (t.isNotEmpty) return t;
+    final n = note.trim();
+    if (n.isNotEmpty) return n.split(RegExp(r'\r?\n')).first;
+    return '启序';
+  }
+
+  factory Item.fromJson(Map<String, dynamic> j) => Item(
+        id: _l(j['id']),
+        kind: _l(j['kind']) == kindIdea
+            ? kindIdea
+            : (_l(j['kind']) == kindInbox ? kindInbox : kindTask),
+
+
+启序待办管理软件 V2.0 源程序鉴别材料 第 19 页（共 60 页）
+=================================================================
+        parentId: _l(j['parent']),
+        title: j['title'] as String? ?? '',
+        note: j['note'] as String? ?? '',
+        done: j['done'] as bool? ?? false,
+        dueTime: _l(j['due']),
+        eventId: _l(j['event']),
+        alarm: j['alarm'] as bool? ?? false,
+        alarmArmed: _l(j['armed']),
+        created: _l(j['created']),
+        updated: _l(j['updated']),
+        completedAt: _l(j['completed']),
+        rank: _l(j['rank']),
+      );
+
+  static int _l(Object? v) => v is int ? v : (int.tryParse('${v ?? ''}') ?? 0);
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'kind': kind,
+        'parent': parentId,
+        'title': title,
+        'note': note,
+        'done': done,
+        'due': dueTime,
+        'event': eventId,
+        'alarm': alarm,
+        'armed': alarmArmed,
+        'created': created,
+        'updated': updated,
+        'completed': completedAt,
+        'rank': rank,
+      };
+
+  Item copy() => Item.fromJson(toJson());
+}
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
+
+import '../channels/native.dart';
+import 'item.dart';
+
+/// 全局数据仓库：条目内存库 + 偏好缓存 + 落盘。
+/// 数据格式与老版完全兼容：start_items.json / start_prefs / focus_min_* 历史。
+class StartStore extends ChangeNotifier {
+  StartStore._();
+  static final StartStore I = StartStore._();
+
+  static const fileJson = 'start_items.json';
+
+
+启序待办管理软件 V2.0 源程序鉴别材料 第 20 页（共 60 页）
+=================================================================
+  static const eulaVersion = 11;
+
+  final List<Item> items = [];
+  int seq = 1;
+  Map<String, Object?> prefs = {};
+  String _dir = '';
+  String get dir => _dir;
+
+  File get _file => File('$_dir/$fileJson');
+
+  Future<void> init() async {
+    _dir = await Native.filesDir();
+    prefs = await Prefs.getAll();
+    try {
+      if (await _file.exists()) {
+        final root = jsonDecode(await _file.readAsString()) as Map<String, dynamic>;
+        seq = _int(root['seq'], 1);
+        final arr = root['items'] as List<dynamic>? ?? [];
+        items
+          ..clear()
+          ..addAll(arr.whereType<Map<String, dynamic>>().map(Item.fromJson));
+      }
+    } catch (_) {}
+    _ensureIds();
+  }
+
+  void _ensureIds() {
+    for (final it in items) {
+      if (it.id >= seq) seq = it.id + 1;
+    }
+  }
+
+  static int _int(Object? v, int d) => v is int ? v : (int.tryParse('${v ?? ''}') ?? d);
+
+  // ---------------- 偏好 ----------------
+
+  Object? pref(String k) => prefs[k];
+
+  /// 供外部在直接改 prefs 缓存后通知刷新。
+  void refresh() => notifyListeners();
+  bool prefBool(String k, [bool d = false]) => prefs[k] as bool? ?? d;
+  int prefInt(String k, [int d = 0]) => _int(prefs[k], d);
+  double prefDouble(String k, [double d = 0]) {
+    final v = prefs[k];
+    if (v is double) return v;
+    if (v is int) return v.toDouble();
+    return double.tryParse('${v ?? ''}') ?? d;
+  }
+
+  String prefStr(String k, [String d = '']) => prefs[k] as String? ?? d;
+
+
+启序待办管理软件 V2.0 源程序鉴别材料 第 21 页（共 60 页）
+=================================================================
+
+  Future<void> setPref(String k, Object? v) async {
+    prefs[k] = v;
+    await Prefs.set(k, v);
+    notifyListeners();
+  }
+
+  // ---------------- 落盘 ----------------
+
+  String exportJson() {
+    return const JsonEncoder.withIndent('  ').convert({
+      'version': 4,
+      'seq': seq,
+      'items': items.map((e) => e.toJson()).toList(),
+    });
+  }
+
+  Future<void> persist() async {
+    try {
+      final tmp = File('$_dir/$fileJson.tmp');
+      await tmp.writeAsString(exportJson(), flush: true);
+      await tmp.rename(_file.path);
+    } catch (_) {}
+  }
+
+  Future<bool> restoreJson(String s) async {
+    try {
+      final root = jsonDecode(s) as Map<String, dynamic>;
+      final arr = root['items'] as List<dynamic>?;
+      if (arr == null) return false;
+      var maxSeq = _int(root['seq'], 1);
+      final parsed = arr.whereType<Map<String, dynamic>>().map(Item.fromJson).toList();
+      for (final it in parsed) {
+        if (it.id >= maxSeq) maxSeq = it.id + 1;
+      }
+      items
+        ..clear()
+        ..addAll(parsed);
+      seq = maxSeq;
+      await persist();
+      for (final it in items) {
+        if (it.kind == Item.kindTask && !it.done && it.dueTime > 0 && it.alarm) {
+          await Native.scheduleNotify(it.id, it.alarmLabel, it.dueTime);
+        } else {
+          await Native.cancelNotify(it.id);
+        }
+      }
+      notifyListeners();
+      return true;
+    } catch (_) {
+
+
+启序待办管理软件 V2.0 源程序鉴别材料 第 22 页（共 60 页）
+=================================================================
+      return false;
+    }
+  }
+
+  /// 清空全部，返回清空前快照 JSON 供撤销。
+  Future<String> clearAll() async {
+    final snap = exportJson();
+    items.clear();
+    seq = 1;
+    await persist();
+    notifyListeners();
+    return snap;
+  }
+
+  // ---------------- 条目操作 ----------------
+
+  Item? byId(int id) {
+    for (final it in items) {
+      if (it.id == id) return it;
+    }
+    return null;
+  }
+
+  int _minRank() {
+    var m = 0;
+    for (final it in items) {
+      if (it.rank < m) m = it.rank;
+    }
+    return m;
+  }
+
+  /// 新增或更新：新条目必须入库（items.add），同 id 不同实例则整体替换。
+  /// 完成态维护 completedAt。
+  Future<void> put(Item it, {bool touchRank = false}) async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final existing = it.id > 0 ? byId(it.id) : null;
+    if (existing == null) {
+      it.id = seq++;
+      // 批量新建（拆词/多行）会显式传 created=now+k 保证子步骤顺序，不能覆盖。
+      if (it.created == 0) it.created = now;
+      if (touchRank) it.rank = _minRank() - 1;
+      items.add(it);
+    } else if (!identical(existing, it)) {
+      it.id = existing.id;
+      it.created = existing.created;
+      items[items.indexOf(existing)] = it;
+    }
+    it.updated = now;
+    if (it.done && it.completedAt == 0) it.completedAt = now;
+    if (!it.done) it.completedAt = 0;
+
+
+启序待办管理软件 V2.0 源程序鉴别材料 第 23 页（共 60 页）
+=================================================================
+    await persist();
+    // 到点提醒：日程任务未完成、有时间且开了提醒 → 定时悬浮通知；否则撤销。
+    if (it.kind == Item.kindTask &&
+        !it.done &&
+        it.dueTime > 0 &&
+        it.alarm &&
+        prefBool('notify_on', true)) {
+      await Native.scheduleNotify(it.id, it.alarmLabel, it.dueTime);
+    } else {
+      await Native.cancelNotify(it.id);
+    }
+    notifyListeners();
+  }
+
+  /// 删除（cascade 时级联删子步骤），返回被删条目供撤销。
+  List<Item> delete(int id, {bool cascade = true}) {
+    final removed = <Item>[];
+    void rec(int pid) {
+      for (final it in List<Item>.from(items)) {
+        if (it.parentId == pid) rec(it.id);
+      }
+      final it = byId(pid);
+      if (it != null) {
+        removed.add(it);
+        items.remove(it);
+      }
+    }
+
+    rec(id);
+    persist();
+    for (final it in removed) {
+      Native.cancelNotify(it.id);
+    }
+    notifyListeners();
+    return removed;
+  }
+
+  Future<void> restore(List<Item> snapshot) async {
+    for (final it in snapshot) {
+      if (byId(it.id) == null) items.add(it);
+      if (it.id >= seq) seq = it.id + 1;
+    }
+    await persist();
+    for (final it in snapshot) {
+      if (it.kind == Item.kindTask && !it.done && it.dueTime > 0 && it.alarm) {
+        await Native.scheduleNotify(it.id, it.alarmLabel, it.dueTime);
+      }
+    }
+    notifyListeners();
+  }
+
+
+启序待办管理软件 V2.0 源程序鉴别材料 第 24 页（共 60 页）
+=================================================================
+
+  /// 批量删除（选择态），返回快照供整批撤销。
+  Future<String> deleteAll(List<int> ids, {bool complete = false}) async {
+    final snap = exportJson();
+    for (final id in ids) {
+      if (complete) {
+        final it = byId(id);
+        if (it != null && !it.done) {
+          it.done = true;
+          it.completedAt = DateTime.now().millisecondsSinceEpoch;
+          await Native.cancelNotify(id);
+        }
+      } else {
+        delete(id);
+      }
+    }
+    await persist();
+    notifyListeners();
+    return snap;
+  }
+
+  /// 拖动排序：按给出的顺序写 rank 1..n。
+  Future<void> reorder(List<int> orderedIds) async {
+    for (var i = 0; i < orderedIds.length; i++) {
+      final it = byId(orderedIds[i]);
+      if (it != null) it.rank = i + 1;
+    }
+    await persist();
+    notifyListeners();
+  }
+
+  // ---------------- 查询 ----------------
+
+  void _sortByRank(List<Item> r) {
+    r.sort((a, b) {
+      if (a.rank != b.rank) return a.rank.compareTo(b.rank);
+      return b.updated.compareTo(a.updated);
+    });
+  }
+
+  /// 未完成任务：已排期升序在前，随时任务在后。
+  List<Item> openTasks() {
+    final timed = <Item>[];
+    final anytime = <Item>[];
+    for (final it in items) {
+      if (it.isIdea || it.isInbox || it.done || it.parentId != 0) continue;
+      if (it.dueTime > 0) {
+        timed.add(it);
+      } else {
+        anytime.add(it);
+
+
+启序待办管理软件 V2.0 源程序鉴别材料 第 25 页（共 60 页）
+=================================================================
+      }
+    }
+    timed.sort((a, b) => a.dueTime.compareTo(b.dueTime));
+    _sortByRank(anytime);
+    return timed..addAll(anytime);
+  }
+
+  /// 全部"随手做"：顶层、未完成、无排期。
+  List<Item> anytimeTasks() {
+    final r = <Item>[];
+    for (final it in items) {
+      if (!it.isIdea && !it.isInbox && !it.done && it.parentId == 0 && it.dueTime == 0) r.add(it);
+    }
+    _sortByRank(r);
+    return r;
+  }
+
+  /// 动手吧暂存：待捋一捋分类的条目（语音/手动倾倒进来）。
+  List<Item> inboxTasks() {
+    final r = items.where((it) => it.isInbox && it.parentId == 0).toList();
+    _sortByRank(r);
+    return r;
+  }
+
+  /// 念头：拖过按 rank，否则按更新时间倒序。
+  List<Item> ideas() {
+    final r = items.where((it) => it.isIdea).toList();
+    _sortByRank(r);
+    return r;
+  }
+
+  /// 捋一捋子步骤：按创建时间正序。
+  List<Item> subtasksOf(int parentId) {
+    final r = items.where((it) => it.parentId == parentId).toList();
+    r.sort((a, b) => a.created.compareTo(b.created));
+    return r;
+  }
+
+  /// 子步骤进度：[已完成, 总数]。
+  List<int> subtaskProgress(int parentId) {
+    var done = 0, total = 0;
+    for (final it in items) {
+      if (it.parentId == parentId) {
+        total++;
+        if (it.done) done++;
+      }
+    }
+    return [done, total];
+  }
+
+
+
+启序待办管理软件 V2.0 源程序鉴别材料 第 26 页（共 60 页）
+=================================================================
+  // ---------------- 今日焦点 ----------------
+
+  /// 本地日期的 epoch day（与 Java LocalDate.now().toEpochDay() 一致）。
+  static int epochDay([DateTime? dt]) {
+    final x = dt ?? DateTime.now();
+    return DateTime(x.year, x.month, x.day)
+        .difference(DateTime(1970, 1, 1))
+        .inDays;
+  }
+
+  static String focusDayKey(int epochDay) {
+    final d = DateTime(1970, 1, 1).add(Duration(days: epochDay));
+    final m = d.month.toString().padLeft(2, '0');
+    final day = d.day.toString().padLeft(2, '0');
+    return 'focus_min_${d.year}-$m-$day';
+  }
+
+  Item? todayFocus() {
+    final day = _int(prefs['focus_of_day'], -9223372036854775808);
+    final id = _int(prefs['focus_of_day_id'], 0);
+    if (day != epochDay() || id <= 0) return null;
+    final it = byId(id);
+    if (it == null || it.isIdea) {
+      // 过期焦点静默清理：不 notify（调用方多在 build 期读取，notify 会打断构建）。
+      prefs.remove('focus_of_day');
+      prefs.remove('focus_of_day_id');
+      Prefs.set('focus_of_day', null);
+      Prefs.set('focus_of_day_id', null);
+      return null;
+    }
+    return it;
+  }
+
+  Future<void> setFocus(int id) async {
+    if (id <= 0) return clearFocus();
+    await Prefs.set('focus_of_day', epochDay());
+    await Prefs.set('focus_of_day_id', id);
+    prefs['focus_of_day'] = epochDay();
+    prefs['focus_of_day_id'] = id;
+    notifyListeners();
+  }
+
+  Future<void> clearFocus() async {
+    await Prefs.set('focus_of_day', null);
+    await Prefs.set('focus_of_day_id', null);
+    prefs.remove('focus_of_day');
+    prefs.remove('focus_of_day_id');
+    notifyListeners();
+  }
+
+
+
+启序待办管理软件 V2.0 源程序鉴别材料 第 27 页（共 60 页）
+=================================================================
+  // ---------------- 专注统计 ----------------
+
+  Future<void> addFocusMinutes(int minutes) async {
+    final today = epochDay();
+    final cur = _int(prefs['focus_day'], -1) == today ? _int(prefs['focus_min'], 0) : 0;
+    final total = (cur + minutes).clamp(0, 1440);
+    await Prefs.set('focus_day', today);
+    await Prefs.set('focus_min', total);
+    await Prefs.set(focusDayKey(today), total);
+    prefs['focus_day'] = today;
+    prefs['focus_min'] = total;
+    prefs[focusDayKey(today)] = total;
+    // 按日统计（1.5 起）：当天专注次数 + 各小时专注分布，供统计页按日期查看。
+    final cntKey = focusDayKey(today).replaceFirst('focus_min_', 'focus_cnt_');
+    final cnt = _int(prefs[cntKey], 0) + 1;
+    final hrs = focusHoursOn(today);
+    final h = DateTime.now().hour;
+    hrs[h] = (hrs[h] + minutes).clamp(0, 1440);
+    final hrsStr = hrs.join(',');
+    final hrsKey = focusDayKey(today).replaceFirst('focus_min_', 'focus_hrs_');
+    await Prefs.set(cntKey, cnt);
+    await Prefs.set(hrsKey, hrsStr);
+    prefs[cntKey] = cnt;
+    prefs[hrsKey] = hrsStr;
+    notifyListeners();
+  }
+
+  int todayFocusMinutes() =>
+      _int(prefs['focus_day'], -1) == epochDay() ? _int(prefs['focus_min'], 0) : 0;
+
+  /// 最近 7 天每天专注分钟，下标 0=6 天前，6=今天。
+  List<int> focusMinutesLast7() {
+    final r = List<int>.filled(7, 0);
+    final today = epochDay();
+    for (var i = 0; i < 7; i++) {
+      r[6 - i] = _int(prefs[focusDayKey(today - i)], 0);
+    }
+    return r;
+  }
+
+  int totalFocusMinutes() {
+    var sum = 0;
+    prefs.forEach((k, v) {
+      if (k.startsWith('focus_min_') && v is int) sum += v;
+      if (k.startsWith('focus_min_') && v is double) sum += v.toInt();
+    });
+    return sum;
+  }
+
+  /// 近 7 天有专注记录的天数。
+
+
+启序待办管理软件 V2.0 源程序鉴别材料 第 28 页（共 60 页）
+=================================================================
+  int activeDaysLast7() {
+    var n = 0;
+    final today = epochDay();
+    for (var i = 0; i < 7; i++) {
+      if (_int(prefs[focusDayKey(today - i)], 0) > 0) n++;
+    }
+    return n;
+  }
+
+  /// 已完成顶层任务数。
+  int completedTasksCount() => items
+      .where((it) => it.parentId == 0 && !it.isIdea && it.done && it.completedAt > 0)
+      .length;
+
+  // ---------------- 按日统计（统计页左右滑动按日期查看） ----------------
+
+  static int _dayStartMs(int epochDay) =>
+      DateTime(1970, 1, 1).add(Duration(days: epochDay)).millisecondsSinceEpoch;
+
+  /// 某天的专注分钟。
+  int focusMinutesOn(int epochDay) => _int(prefs[focusDayKey(epochDay)], 0);
+
+  /// 某天的专注次数（1.5 起记录，更早的日子为 0）。
+  int focusCountOn(int epochDay) => _int(
+      prefs[focusDayKey(epochDay).replaceFirst('focus_min_', 'focus_cnt_')], 0);
+
+  /// 某天各小时专注分钟（24 格；1.5 起记录，更早的日子全 0）。
+  List<int> focusHoursOn(int epochDay) {
+    final raw =
+        prefs[focusDayKey(epochDay).replaceFirst('focus_min_', 'focus_hrs_')];
+    final r = List<int>.filled(24, 0);
+    if (raw is String && raw.isNotEmpty) {
+      final parts = raw.split(',');
+      for (var i = 0; i < 24 && i < parts.length; i++) {
+        r[i] = int.tryParse(parts[i]) ?? 0;
+      }
+    }
+    return r;
+  }
+
+  /// 某天完成的顶层任务数（completedAt 落在当日）。
+  int completedOn(int epochDay) {
+    final lo = _dayStartMs(epochDay);
+    final hi = lo + const Duration(days: 1).inMilliseconds;
+    return items
+        .where((it) =>
+            it.parentId == 0 &&
+            !it.isIdea &&
+            it.done &&
+            it.completedAt >= lo &&
+
+
+启序待办管理软件 V2.0 源程序鉴别材料 第 29 页（共 60 页）
+=================================================================
+            it.completedAt < hi)
+        .length;
+  }
+
+  /// 某天新增的条目数（created 落在当日，含全部类型与步骤）。
+  int createdOn(int epochDay) {
+    final lo = _dayStartMs(epochDay);
+    final hi = lo + const Duration(days: 1).inMilliseconds;
+    return items.where((it) => it.created >= lo && it.created < hi).length;
+  }
+
+  /// 首次使用日期：Prefs 已存直取；老用户以现有数据（条目创建/完成时间、
+  /// focus_min_* 历史键）里最早的一天回填，保证统计页覆盖全部使用周期。
+  Future<DateTime> firstUseDate() async {
+    final saved = _int(prefs['first_use'], 0);
+    if (saved > 0) return DateTime.fromMillisecondsSinceEpoch(saved);
+    var earliest = DateTime.now();
+    for (final it in items) {
+      for (final ts in [it.created, it.completedAt]) {
+        if (ts > 0) {
+          final d = DateTime.fromMillisecondsSinceEpoch(ts);
+          if (d.isBefore(earliest)) earliest = d;
+        }
+      }
+    }
+    prefs.forEach((k, v) {
+      if (k.startsWith('focus_min_')) {
+        final p = k.substring(10).split('-');
+        if (p.length == 3) {
+          final d = DateTime(int.tryParse(p[0]) ?? 9999,
+              int.tryParse(p[1]) ?? 1, int.tryParse(p[2]) ?? 1);
+          if (d.isBefore(earliest)) earliest = d;
+        }
+      }
+    });
+    final day = DateTime(earliest.year, earliest.month, earliest.day);
+    prefs['first_use'] = day.millisecondsSinceEpoch;
+    await Prefs.set('first_use', day.millisecondsSinceEpoch);
+    return day;
+  }
+}
+import 'package:flutter/material.dart';
+
+import '../ai/assist.dart';
+import '../data/store.dart';
+import '../theme/tokens.dart';
+import '../widgets/ui.dart';
+
+/// 扩展 · AI 助手配置。默认关闭；开启后可选用预设免费模型或自填任意
+/// OpenAI 兼容端点。仅在你主动点「AI 整理」时联网，发送内容只有那一段语音/文字。
+
+
+启序待办管理软件 V2.0 源程序鉴别材料 第 30 页（共 60 页）
+=================================================================
+class AiSettingsScreen extends StatelessWidget {
+  const AiSettingsScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: StartStore.I,
+      builder: (context, _) {
+        final c = ThemeTokens.of(context);
+        final s = StartStore.I;
+        final on = s.prefBool('ai_on', false);
+        return Scaffold(
+          backgroundColor: c.paper,
+          body: SafeArea(
+            child: ListView(
+              padding: const EdgeInsets.all(S.md),
+              children: [
+                Row(
+                  children: [
+                    IconBtn(Icons.arrow_back,
+                        onTap: () => Navigator.pop(context)),
+                    const SizedBox(width: S.xs),
+                    Text('AI 助手',
+                        style: TextStyle(
+                            fontSize: S.textXl,
+                            fontWeight: FontWeight.bold,
+                            color: c.ink)),
+                  ],
+                ),
+                const SizedBox(height: S.sm),
+                _Card(
+                  child: Row(
+                    children: [
+                      Icon(Icons.auto_awesome, size: 20, color: c.ink),
+                      const SizedBox(width: S.sm),
+                      Expanded(
+                        child: Text('启用 AI 助手',
+                            style:
+                                TextStyle(fontSize: S.textMd, color: c.ink)),
+                      ),
+                      Switch(
+                        value: on,
+                        activeThumbColor: c.accent,
+                        onChanged: AiConfig.setOn,
+                      ),
+                    ],
+                  ),
+                ),
+                if (on) ...[
+                  _Label(c, '选择服务'),
+（源程序中间部分省略，以下为程序末尾连续 30 页）
+
+
+启序待办管理软件 V2.0 源程序鉴别材料 第 31 页（共 60 页）
+=================================================================
+              curve: Curves.easeOut,
+              child: DragTarget<int>(
+                onAcceptWithDetails: (d) =>
+                    (onTrash ?? (_) async {})(d.data),
+                builder: (ctx, cand, _) {
+                  final hov = cand.isNotEmpty;
+                  final navPad = MediaQuery.viewPaddingOf(ctx).bottom;
+                  return AnimatedContainer(
+                    duration: const Duration(milliseconds: 140),
+                    curve: Curves.easeOut,
+                    height: (hov ? 80 : 72) + navPad,
+                    padding: EdgeInsets.only(bottom: navPad),
+                    decoration: BoxDecoration(
+                      // 实心番茄红：悬停时加深一档，扔进去有明确反馈
+                      color: hov
+                          ? const Color(0xFFE04A2E)
+                          : ThemeTokens.of(ctx).accent,
+                      boxShadow: [
+                        BoxShadow(
+                            color: Colors.black
+                                .withValues(alpha: hov ? 0.25 : 0.12),
+                            blurRadius: hov ? 18 : 10,
+                            spreadRadius: hov ? 1 : 0)
+                      ],
+                    ),
+                    child: Center(
+                      child: Icon(Icons.delete_outline,
+                          size: hov ? 34 : 30, color: Colors.white),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 统一页头：返回箭头（可选）+ 标题 + 计数（等宽数字）+ 右侧动作区。
+class PageHead extends StatelessWidget {
+  final String title;
+  final int count; // -1 = 不显示
+  final VoidCallback? onBack;
+  final List<Widget> actions;
+  const PageHead(this.title,
+      {super.key, this.count = -1, this.onBack, this.actions = const []});
+
+  @override
+
+
+启序待办管理软件 V2.0 源程序鉴别材料 第 32 页（共 60 页）
+=================================================================
+  Widget build(BuildContext context) {
+    final c = ThemeTokens.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(S.md, S.sm, S.md, S.sm),
+      child: Row(
+        children: [
+          if (onBack != null) ...[
+            IconBtn(Icons.arrow_back, onTap: onBack, color: c.ink),
+            const SizedBox(width: S.xs),
+          ],
+          Text(title,
+              style: TextStyle(
+                  fontSize: S.textXl, fontWeight: FontWeight.bold, color: c.ink)),
+          if (count >= 0) ...[
+            const SizedBox(width: S.xs),
+            Text('$count',
+                style: TextStyle(
+                    fontSize: S.textSm,
+                    color: c.inkSoft,
+                    fontFeatures: const [FontFeature.tabularFigures()])),
+          ],
+          const Spacer(),
+          ...actions,
+        ],
+      ),
+    );
+  }
+}
+
+/// 自定义时间选择面板：替代原生 showTimePicker。
+/// 上滑选小时/分钟，下两个大按钮确认/取消，风格统一番茄红。
+Future<TimeOfDay?> showStartTimePicker(BuildContext context,
+    {TimeOfDay? initial}) async {
+  return showStartSheet<TimeOfDay>(context, (ctx) => _TimePickerSheet(initial: initial));
+}
+
+class _TimePickerSheet extends StatefulWidget {
+  final TimeOfDay? initial;
+  const _TimePickerSheet({this.initial});
+  @override
+  State<_TimePickerSheet> createState() => _TimePickerSheetState();
+}
+
+class _TimePickerSheetState extends State<_TimePickerSheet> {
+  late int _h;
+  late int _m;
+  final _hc = FixedExtentScrollController();
+  final _mc = FixedExtentScrollController();
+
+  @override
+
+
+启序待办管理软件 V2.0 源程序鉴别材料 第 33 页（共 60 页）
+=================================================================
+  void initState() {
+    super.initState();
+    final now = widget.initial ?? TimeOfDay.now();
+    _h = now.hour;
+    _m = now.minute;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _hc.jumpToItem(_h);
+      _mc.jumpToItem(_m);
+    });
+  }
+
+  @override
+  void dispose() {
+    _hc.dispose();
+    _mc.dispose();
+    super.dispose();
+  }
+
+  Widget _wheel(FixedExtentScrollController ctl, int count, int cur,
+      ValueChanged<int> onSel) {
+    final c = ThemeTokens.of(context);
+    return SizedBox(
+      height: 160,
+      child: ListWheelScrollView.useDelegate(
+        controller: ctl,
+        itemExtent: 40,
+        perspective: 0.005,
+        physics: const FixedExtentScrollPhysics(),
+        onSelectedItemChanged: onSel,
+        childDelegate: ListWheelChildBuilderDelegate(
+          childCount: count,
+          builder: (_, i) {
+            final on = i == cur;
+            return Center(
+              child: Text(
+                i.toString().padLeft(2, '0'),
+                style: TextStyle(
+                  fontSize: on ? 22 : S.textMd,
+                  fontWeight: on ? FontWeight.bold : FontWeight.normal,
+                  color: on ? c.accent : c.inkSoft,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+
+
+启序待办管理软件 V2.0 源程序鉴别材料 第 34 页（共 60 页）
+=================================================================
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeTokens.of(context);
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(S.md),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Expanded(child: _wheel(_hc, 24, _h, (v) => setState(() => _h = v))),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: S.sm),
+                  child: Text(':',
+                      style: TextStyle(
+                          fontSize: 22, fontWeight: FontWeight.bold, color: c.ink)),
+                ),
+                Expanded(child: _wheel(_mc, 60, _m, (v) => setState(() => _m = v))),
+              ],
+            ),
+            const SizedBox(height: S.md),
+            Row(
+              children: [
+                Expanded(
+                  child: Pressable(
+                    onTap: () => Navigator.pop(context),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: S.sm),
+                      decoration: BoxDecoration(
+                          color: c.cardAlt,
+                          borderRadius: BorderRadius.circular(999)),
+                      child: Center(
+                          child: Text('取消',
+                              style: TextStyle(
+                                  fontSize: S.textMd, color: c.ink))),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: S.sm),
+                Expanded(
+                  child: Pressable(
+                    onTap: () =>
+                        Navigator.pop(context, TimeOfDay(hour: _h, minute: _m)),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: S.sm),
+                      decoration: BoxDecoration(
+                          color: c.accent,
+                          borderRadius: BorderRadius.circular(999)),
+
+
+启序待办管理软件 V2.0 源程序鉴别材料 第 35 页（共 60 页）
+=================================================================
+                      child: Center(
+                          child: Text('确认',
+                              style: TextStyle(
+                                  fontSize: S.textMd,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white))),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 自定义日期选择面板：替代原生 showDatePicker。
+/// 年/月/日三列滚轮，随年月联动当月天数，风格统一番茄红。
+Future<DateTime?> showStartDatePicker(BuildContext context,
+    {DateTime? initial}) async {
+  return showStartSheet<DateTime>(context, (ctx) => _DatePickerSheet(initial: initial));
+}
+
+class _DatePickerSheet extends StatefulWidget {
+  final DateTime? initial;
+  const _DatePickerSheet({this.initial});
+  @override
+  State<_DatePickerSheet> createState() => _DatePickerSheetState();
+}
+
+class _DatePickerSheetState extends State<_DatePickerSheet> {
+  // 未来的事最多选一年后的：年份只列今年与明年，选到明年时月/日不超今天。
+  late final int _yearBase = DateTime.now().year;
+  static const _yearCount = 2;
+  late final int _nowMonth = DateTime.now().month;
+  late final int _nowDay = DateTime.now().day;
+  late int _y, _mo, _d;
+  final _yc = FixedExtentScrollController();
+  final _mc = FixedExtentScrollController();
+  final _dc = FixedExtentScrollController();
+
+  int get _monthCount => _y >= _yearBase + 1 ? _nowMonth : 12;
+
+  int get _daysInMonth {
+    final max = DateUtils.getDaysInMonth(_y, _mo);
+    if (_y >= _yearBase + 1 && _mo >= _nowMonth) return _nowDay;
+    return max;
+  }
+
+
+启序待办管理软件 V2.0 源程序鉴别材料 第 36 页（共 60 页）
+=================================================================
+
+  @override
+  void initState() {
+    super.initState();
+    final now = widget.initial ?? DateTime.now();
+    _y = now.year.clamp(_yearBase, _yearBase + _yearCount - 1);
+    _mo = now.month;
+    _d = now.day;
+    _clampFields();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _yc.jumpToItem(_y - _yearBase);
+      _mc.jumpToItem(_mo - 1);
+      _dc.jumpToItem((_d - 1).clamp(0, _daysInMonth - 1));
+    });
+  }
+
+  @override
+  void dispose() {
+    _yc.dispose();
+    _mc.dispose();
+    _dc.dispose();
+    super.dispose();
+  }
+
+  /// 纯字段钳制（初始化用，不碰滚轮控制器）。
+  void _clampFields() {
+    if (_y >= _yearBase + 1) {
+      if (_mo > _nowMonth) _mo = _nowMonth;
+      if (_mo == _nowMonth && _d > _nowDay) _d = _nowDay;
+    }
+    final maxD = _daysInMonth;
+    if (_d > maxD) _d = maxD;
+  }
+
+  void _clampDay() {
+    if (_y >= _yearBase + 1 && _mo > _nowMonth) {
+      _mo = _nowMonth;
+      _mc.jumpToItem(_mo - 1);
+    }
+    final max = _daysInMonth;
+    if (_d > max) {
+      _d = max;
+      _dc.jumpToItem(_d - 1);
+    }
+  }
+
+  Widget _wheel(FixedExtentScrollController ctl, int count, int cur,
+      ValueChanged<int> onSel, String Function(int) label) {
+    final c = ThemeTokens.of(context);
+    return SizedBox(
+
+
+启序待办管理软件 V2.0 源程序鉴别材料 第 37 页（共 60 页）
+=================================================================
+      height: 160,
+      child: ListWheelScrollView.useDelegate(
+        controller: ctl,
+        itemExtent: 40,
+        perspective: 0.005,
+        physics: const FixedExtentScrollPhysics(),
+        onSelectedItemChanged: onSel,
+        childDelegate: ListWheelChildBuilderDelegate(
+          childCount: count,
+          builder: (_, i) {
+            final on = i == cur;
+            return Center(
+              child: Text(
+                label(i),
+                style: TextStyle(
+                  fontSize: on ? 22 : S.textMd,
+                  fontWeight: on ? FontWeight.bold : FontWeight.normal,
+                  color: on ? c.accent : c.inkSoft,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeTokens.of(context);
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(S.md),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Expanded(child: _wheel(_yc, _yearCount, _y - _yearBase,
+                    (v) => setState(() { _y = _yearBase + v; _clampDay(); }),
+                    (i) => '${_yearBase + i} 年')),
+                const SizedBox(width: S.xs),
+                Expanded(child: _wheel(_mc, _monthCount, _mo - 1,
+                    (v) => setState(() { _mo = v + 1; _clampDay(); }),
+                    (i) => '${i + 1} 月')),
+                const SizedBox(width: S.xs),
+                Expanded(child: _wheel(_dc, _daysInMonth, _d - 1,
+                    (v) => setState(() => _d = v + 1),
+
+
+启序待办管理软件 V2.0 源程序鉴别材料 第 38 页（共 60 页）
+=================================================================
+                    (i) => '${i + 1} 日')),
+              ],
+            ),
+            const SizedBox(height: S.md),
+            Row(
+              children: [
+                Expanded(
+                  child: Pressable(
+                    onTap: () => Navigator.pop(context),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: S.sm),
+                      decoration: BoxDecoration(
+                          color: c.cardAlt,
+                          borderRadius: BorderRadius.circular(999)),
+                      child: Center(
+                          child: Text('取消',
+                              style: TextStyle(
+                                  fontSize: S.textMd, color: c.ink))),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: S.sm),
+                Expanded(
+                  child: Pressable(
+                    onTap: () => Navigator.pop(context, DateTime(_y, _mo, _d)),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: S.sm),
+                      decoration: BoxDecoration(
+                          color: c.accent,
+                          borderRadius: BorderRadius.circular(999)),
+                      child: Center(
+                          child: Text('确认',
+                              style: TextStyle(
+                                  fontSize: S.textMd,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white))),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+
+
+启序待办管理软件 V2.0 源程序鉴别材料 第 39 页（共 60 页）
+=================================================================
+
+import '../channels/native.dart';
+import '../data/store.dart';
+import '../theme/tokens.dart';
+import '../widgets/ui.dart';
+
+/// 长按「动手吧」唤起的语音面板。默认系统离线引擎（不联网）；
+/// 用户在设置开启「在线语音」后允许在线识别。
+///
+/// 返回 {'action': 'dump'|'ai', 'text': 识别全文}；取消返回 null。
+Future<Map<String, dynamic>?> showVoiceSheet(BuildContext context) {
+  return showModalBottomSheet<Map<String, dynamic>>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: ThemeTokens.of(context).paper,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(S.lg)),
+    ),
+    builder: (_) => const _VoiceSheet(),
+  );
+}
+
+class _VoiceSheet extends StatefulWidget {
+  const _VoiceSheet();
+
+  @override
+  State<_VoiceSheet> createState() => _VoiceSheetState();
+}
+
+class _VoiceSheetState extends State<_VoiceSheet> with TickerProviderStateMixin {
+  StreamSubscription? _sub;
+  final List<String> _parts = []; // 已确认的句子
+  String _partial = ''; // 本轮临时结果
+  String _error = '';
+  bool _closing = false;
+  Timer? _restart;
+  late final AnimationController _pulse;
+
+  bool get _aiReady => StartStore.I.prefBool('ai_on', false);
+
+  String get _text => [..._parts, if (_partial.isNotEmpty) _partial].join('，');
+
+  @override
+  void initState() {
+    super.initState();
+    _pulse = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..repeat(reverse: true);
+    _sub = SystemVoice.events().listen(_onEvent);
+
+
+启序待办管理软件 V2.0 源程序鉴别材料 第 40 页（共 60 页）
+=================================================================
+    _begin();
+  }
+
+  Future<void> _begin() async {
+    await SystemVoice.start(
+      online: StartStore.I.prefBool('voice_online', false),
+    );
+  }
+
+  /// 一句说完后自动续听（停顿/无匹配/引擎忙都静默重开），直到用户手动结束。
+  void _autoRestart() {
+    _restart?.cancel();
+    _restart = Timer(const Duration(milliseconds: 350), () {
+      if (!mounted || _closing) return;
+      _begin();
+    });
+  }
+
+  void _onEvent(Map<String, Object?> e) {
+    if (!mounted || _closing) return;
+    final type = e['type'] as String? ?? '';
+    final text = (e['text'] as String? ?? '').trim();
+    switch (type) {
+      case 'ready':
+        setState(() => _error = '');
+        break;
+      case 'partial':
+        setState(() => _partial = text);
+        break;
+      case 'final':
+        if (text.isNotEmpty) {
+          setState(() {
+            _parts.add(text);
+            _partial = '';
+            _error = '';
+          });
+        }
+        _autoRestart();
+        break;
+      case 'end':
+        _autoRestart();
+        break;
+      case 'error':
+        final code = int.tryParse(text);
+        // 6 超时 / 7 没听清 / 8 引擎忙：安静环境下的正常事件，静默续听。
+        if (code != null && (code == 6 || code == 7 || code == 8)) {
+          _autoRestart();
+        } else if (code == null) {
+          // 原生侧给的中文人话提示（无引擎 / 麦克风权限）。
+          setState(() => _error = text);
+
+
+启序待办管理软件 V2.0 源程序鉴别材料 第 41 页（共 60 页）
+=================================================================
+        } else {
+          setState(() => _error = '识别出了点问题（$code），请重试');
+        }
+        break;
+    }
+  }
+
+  Future<void> _finish(String action) async {
+    if (_closing) return;
+    _closing = true;
+    _restart?.cancel();
+    await SystemVoice.stop();
+    if (!mounted) return;
+    Navigator.pop(context, {'action': action, 'text': _text});
+  }
+
+  Future<void> _cancel() async {
+    if (_closing) return;
+    _closing = true;
+    _restart?.cancel();
+    await SystemVoice.stop();
+    if (!mounted) return;
+    Navigator.pop(context);
+  }
+
+  @override
+  void dispose() {
+    _restart?.cancel();
+    _sub?.cancel();
+    _pulse.dispose();
+    // 非正常退出（下滑关 sheet）也要停麦。
+    SystemVoice.stop();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeTokens.of(context);
+    final online = StartStore.I.prefBool('voice_online', false);
+    return PopScope(
+      canPop: true,
+      onPopInvokedWithResult: (_, __) => _cancel(),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(S.md, S.sm, S.md, S.sm),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+
+
+启序待办管理软件 V2.0 源程序鉴别材料 第 42 页（共 60 页）
+=================================================================
+              // 抓手条
+              Center(
+                child: Container(
+                  width: 36,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: S.sm),
+                  decoration: BoxDecoration(
+                    color: c.line,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  _PulsingMic(pulse: _pulse, color: c.accent),
+                  const SizedBox(width: S.sm),
+                  Text(_error.isEmpty ? '正在听，说完自动续听' : '没在听',
+                      style: TextStyle(
+                          fontSize: S.textMd,
+                          fontWeight: FontWeight.bold,
+                          color: _error.isEmpty ? c.ink : c.accentDark)),
+                  const SizedBox(width: S.sm),
+                  Text(online ? '在线' : '离线',
+                      style: TextStyle(fontSize: S.textSm, color: c.inkSoft)),
+                ],
+              ),
+              const SizedBox(height: S.sm),
+              // 识别文字区
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 168, minHeight: 72),
+                child: StartCard(
+                  color: c.ringWell,
+                  padding: const EdgeInsets.all(S.md),
+                  child: SingleChildScrollView(
+                    reverse: true,
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: _error.isNotEmpty
+                          ? Text(_error,
+                              style: TextStyle(
+                                  fontSize: S.textMd, color: c.accentDark, height: 1.5))
+                          : Text.rich(
+                              TextSpan(children: [
+                                TextSpan(
+                                  text: _parts.join('，'),
+                                  style: TextStyle(
+                                      fontSize: S.textMd, color: c.ink, height: 1.5),
+                                ),
+                                if (_parts.isNotEmpty && _partial.isNotEmpty)
+
+
+启序待办管理软件 V2.0 源程序鉴别材料 第 43 页（共 60 页）
+=================================================================
+                                  const TextSpan(text: '，'),
+                                TextSpan(
+                                  text: _partial,
+                                  style: TextStyle(
+                                      fontSize: S.textMd, color: c.inkSoft, height: 1.5),
+                                ),
+                              ]),
+                            ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: S.md),
+              Row(
+                children: [
+                  Expanded(
+                    child: Pressable(
+                      onTap: _cancel,
+                      child: Container(
+                        height: 48,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: c.cardAlt,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text('取消',
+                            style: TextStyle(
+                                fontSize: S.textMd,
+                                fontWeight: FontWeight.bold,
+                                color: c.ink)),
+                      ),
+                    ),
+                  ),
+                  if (_aiReady) ...[
+                    const SizedBox(width: S.sm),
+                    Expanded(
+                      child: Pressable(
+                        onTap: () => _finish('ai'),
+                        child: Container(
+                          height: 48,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: c.accentSoft,
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(color: c.accent, width: 1.5),
+                          ),
+                          child: Text('AI 整理',
+                              style: TextStyle(
+                                  fontSize: S.textMd,
+                                  fontWeight: FontWeight.bold,
+
+
+启序待办管理软件 V2.0 源程序鉴别材料 第 44 页（共 60 页）
+=================================================================
+                                  color: c.accentDark)),
+                        ),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(width: S.sm),
+                  Expanded(
+                    child: Pressable(
+                      onTap: () => _finish('dump'),
+                      child: Container(
+                        height: 48,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: c.accent,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: const Text('说完了',
+                            style: TextStyle(
+                                fontSize: S.textMd,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white)),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 录音中的脉动麦克风：番茄红圆点 + 呼吸外扩波纹。
+class _PulsingMic extends StatelessWidget {
+  final Animation<double> pulse;
+  final Color color;
+  const _PulsingMic({required this.pulse, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 36,
+      height: 36,
+      child: AnimatedBuilder(
+        animation: pulse,
+        builder: (_, __) {
+          final t = pulse.value;
+          return Stack(
+
+
+启序待办管理软件 V2.0 源程序鉴别材料 第 45 页（共 60 页）
+=================================================================
+            alignment: Alignment.center,
+            children: [
+              Container(
+                width: 28 + 8 * t,
+                height: 28 + 8 * t,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: color.withValues(alpha: 0.18 * (1 - t)),
+                ),
+              ),
+              Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: color,
+                  boxShadow: [
+                    BoxShadow(color: color.withValues(alpha: 0.4), blurRadius: 8),
+                  ],
+                ),
+                child: const Icon(Icons.mic, size: 16, color: Colors.white),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+package com.start.notes
+
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import org.json.JSONObject
+import java.io.File
+
+/**
+ * 开机自启：扫描 start_items.json，把未完成、排期在未来的任务闹钟重新注册，
+ * 防止重启后到点提醒丢失。字段与 lib/data/item.dart 的 toJson 完全一致
+ * （kind==0 任务、done 未完成、due 毫秒时间戳）。全程静默，出错直接放弃。
+ */
+class BootReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
+        try {
+            val f = File(context.filesDir, "start_items.json")
+            if (!f.exists()) return
+            val arr = JSONObject(f.readText()).optJSONArray("items") ?: return
+            val now = System.currentTimeMillis()
+
+
+启序待办管理软件 V2.0 源程序鉴别材料 第 46 页（共 60 页）
+=================================================================
+            for (i in 0 until arr.length()) {
+                val o = arr.optJSONObject(i) ?: continue
+                val due = o.optLong("due")
+                if (o.optInt("kind") != 0 || o.optBoolean("done") || due <= now) continue
+                val t = o.optString("title").trim()
+                ReminderAlarm.schedule(context, o.optInt("id"),
+                    if (t.isNotEmpty()) t else "Start", due)
+            }
+        } catch (_: Exception) {
+        }
+    }
+}
+package com.start.notes
+
+import android.Manifest
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.ContentValues
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.media.AudioAttributes
+import android.media.AudioFormat
+import android.media.AudioTrack
+import android.media.MediaPlayer
+import android.os.Build
+import android.os.Bundle
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.provider.AlarmClock
+import android.provider.CalendarContract
+import android.speech.RecognitionListener
+import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
+import android.view.WindowManager
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
+import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.EventChannel
+import io.flutter.plugin.common.MethodChannel
+import java.text.BreakIterator
+import java.util.TimeZone
+import java.util.Calendar
+import java.util.Locale
+
+/**
+ * 原生通道层：偏好读写 / 中文分词 / 音效震动 / 系统信息 / 任意门动作 / 日历闹钟 / 语音识别。
+
+
+启序待办管理软件 V2.0 源程序鉴别材料 第 47 页（共 60 页）
+=================================================================
+ * prefs 直接走同名 SharedPreferences，保证与老 Java 版数据完全兼容。
+ */
+class MainActivity : FlutterActivity() {
+
+    private var chime: MediaPlayer? = null
+    private var boot: MediaPlayer? = null
+    private var voice: VoiceChannel? = null
+    private var pendingResult: MethodChannel.Result? = null
+    private var pendingExportJson: String? = null
+
+    override fun configureFlutterEngine(engine: FlutterEngine) {
+        super.configureFlutterEngine(engine)
+        val m = engine.dartExecutor.binaryMessenger
+
+        MethodChannel(m, "start/prefs").setMethodCallHandler { call, result ->
+            val sp = getSharedPreferences(call.argument<String>("name") ?: "start_prefs", MODE_PRIVATE)
+            when (call.method) {
+                "getAll" -> result.success(sp.all)
+                "set" -> {
+                    val key = call.argument<String>("key") ?: return@setMethodCallHandler result.error("args", "key required", null)
+                    val value = call.argument<Any?>("value")
+                    val e = sp.edit()
+                    when (value) {
+                        null -> e.remove(key)
+                        is Boolean -> e.putBoolean(key, value)
+                        is Int -> e.putInt(key, value)
+                        is Long -> e.putLong(key, value)
+                        is Double -> e.putFloat(key, value.toFloat())
+                        is String -> e.putString(key, value)
+                        else -> return@setMethodCallHandler result.error("type", "unsupported ${value?.javaClass}", null)
+                    }
+                    e.apply()
+                    result.success(null)
+                }
+                else -> result.notImplemented()
+            }
+        }
+
+        MethodChannel(m, "start/segment").setMethodCallHandler { call, result ->
+            when (call.method) {
+                "words" -> result.success(segmentWords(call.argument<String>("text") ?: ""))
+                else -> result.notImplemented()
+            }
+        }
+
+        MethodChannel(m, "start/sound").setMethodCallHandler { call, result ->
+            when (call.method) {
+                "tick" -> {
+                    playTick((call.argument<Int>("volume") ?: 70).coerceIn(0, 100))
+                    result.success(null)
+
+
+启序待办管理软件 V2.0 源程序鉴别材料 第 48 页（共 60 页）
+=================================================================
+                }
+                "chime" -> {
+                    stopChime()
+                    try {
+                        chime = MediaPlayer.create(this, R.raw.finish_chime)?.apply {
+                            setOnCompletionListener { mp ->
+                                try { mp.release() } catch (_: Exception) {}
+                                chime = null
+                            }
+                            start()
+                        }
+                    } catch (_: Exception) {}
+                    result.success(null)
+                }
+                "stopChime" -> { stopChime(); result.success(null) }
+                "playBoot" -> {
+                    val sp = getSharedPreferences("start_prefs", MODE_PRIVATE)
+                    if (sp.getBoolean("boot_sound_on", false)) {
+                        val vol = (sp.getInt("sound_volume", 70) / 100f)
+                        playBoot(java.io.File(filesDir, "boot_sound.mp3"), vol)
+                    }
+                    result.success(null)
+                }
+                "previewBoot" -> {
+                    val vol = ((call.argument<Int>("volume") ?: 70).coerceIn(0, 100)) / 100f
+                    playBoot(java.io.File(filesDir, "boot_sound.mp3"), vol)
+                    result.success(null)
+                }
+                "stopBoot" -> { stopBoot(); result.success(null) }
+                else -> result.notImplemented()
+            }
+        }
+
+        MethodChannel(m, "start/system").setMethodCallHandler { call, result ->
+            when (call.method) {
+                "filesDir" -> result.success(filesDir.absolutePath)
+                "versionName" -> result.success(
+                    try {
+                        packageManager.getPackageInfo(packageName, 0).versionName
+                    } catch (_: Exception) {
+                        null
+                    }
+                )
+                "calendarInsert" -> {
+                    val title = call.argument<String>("title") ?: ""
+                    // Dart 毫秒时间戳是 64 位，按值域编码为 Int 或 Long，须安全读取。
+                    val msRaw = call.argument<Any>("ms")
+                    val ms = (msRaw as? Long) ?: (msRaw as? Int)?.toLong() ?: 0L
+                    if (ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_CALENDAR)
+                        != PackageManager.PERMISSION_GRANTED
+
+
+启序待办管理软件 V2.0 源程序鉴别材料 第 49 页（共 60 页）
+=================================================================
+                    ) {
+                        ActivityCompat.requestPermissions(
+                            this,
+                            arrayOf(Manifest.permission.WRITE_CALENDAR, Manifest.permission.READ_CALENDAR),
+                            211
+                        )
+                        result.success(0)
+                    } else {
+                        try {
+                            // 取第一个可写日历（贡献者权限以上）。
+                            var calId = -1L
+                            contentResolver.query(
+                                CalendarContract.Calendars.CONTENT_URI,
+                                arrayOf(
+                                    CalendarContract.Calendars._ID,
+                                    CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL
+                                ),
+                                "${CalendarContract.Calendars.VISIBLE} = 1", null,
+                                "${CalendarContract.Calendars._ID} ASC"
+                            )?.use { cur ->
+                                while (cur.moveToNext()) {
+                                    // CALENDAR_ACCESS_LEVEL >= CONTRIBUTOR(500) 才可写。
+                                    if (cur.getInt(1) >= 500) {
+                                        calId = cur.getLong(0)
+                                        break
+                                    }
+                                }
+                            }
+                            if (calId <= 0) {
+                                result.success(0)
+                            } else {
+                                val cv = ContentValues().apply {
+                                    put(CalendarContract.Events.CALENDAR_ID, calId)
+                                    put(CalendarContract.Events.TITLE, title)
+                                    put(CalendarContract.Events.DTSTART, ms)
+                                    put(CalendarContract.Events.DTEND, ms + 60 * 60 * 1000)
+                                    put(CalendarContract.Events.EVENT_TIMEZONE, TimeZone.getDefault().id)
+                                }
+                                val uri = contentResolver.insert(CalendarContract.Events.CONTENT_URI, cv)
+                                result.success(uri?.lastPathSegment?.toLongOrNull() ?: 0)
+                            }
+                        } catch (_: Exception) {
+                            result.success(0)
+                        }
+                    }
+                }
+                "vibrate" -> {
+                    vibrate((call.argument<Int>("ms") ?: 20).toLong())
+                    result.success(null)
+                }
+
+
+启序待办管理软件 V2.0 源程序鉴别材料 第 50 页（共 60 页）
+=================================================================
+                "keepScreenOn" -> {
+                    if (call.argument<Boolean>("on") == true)
+                        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                    else
+                        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                    result.success(null)
+                }
+                "initialShare" -> result.success(
+                    intent?.takeIf { it.action == Intent.ACTION_SEND }?.getStringExtra(Intent.EXTRA_TEXT)
+                )
+                "openAction" -> {
+                    val kind = call.argument<String>("kind")
+                    val data = call.argument<String>("data") ?: ""
+                    try {
+                        when (kind) {
+                            "dial" -> startActivity(Intent(Intent.ACTION_DIAL, android.net.Uri.parse("tel:${android.net.Uri.encode(data)}")))
+                            "url" -> startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(data)))
+                            else -> {
+                                result.notImplemented()
+                                return@setMethodCallHandler
+                            }
+                        }
+                        result.success(null)
+                    } catch (e: Exception) {
+                        result.error("open", e.message, null)
+                    }
+                }
+                "calendar" -> {
+                    val title = call.argument<String>("title") ?: ""
+                    val msRaw = call.argument<Any>("ms")
+                    val ms = (msRaw as? Long) ?: (msRaw as? Int)?.toLong() ?: 0L
+                    try {
+                        val cal = Calendar.getInstance().apply { timeInMillis = ms }
+                        val i = Intent(Intent.ACTION_INSERT).apply {
+                            data = CalendarContract.Events.CONTENT_URI
+                            putExtra(CalendarContract.Events.TITLE, title)
+                            putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, ms)
+                            putExtra(CalendarContract.EXTRA_EVENT_END_TIME, ms + 60 * 60 * 1000)
+                        }
+                        startActivity(i)
+                        result.success(null)
+                    } catch (e: Exception) {
+                        result.error("calendar", e.message, null)
+                    }
+                }
+                "alarm" -> {
+                    val title = call.argument<String>("title") ?: ""
+                    val msRaw = call.argument<Any>("ms")
+                    val ms = (msRaw as? Long) ?: (msRaw as? Int)?.toLong() ?: 0L
+                    try {
+
+
+启序待办管理软件 V2.0 源程序鉴别材料 第 51 页（共 60 页）
+=================================================================
+                        val cal = Calendar.getInstance().apply { timeInMillis = ms }
+                        val i = Intent(AlarmClock.ACTION_SET_ALARM).apply {
+                            putExtra(AlarmClock.EXTRA_MESSAGE, title)
+                            putExtra(AlarmClock.EXTRA_HOUR, cal.get(Calendar.HOUR_OF_DAY))
+                            putExtra(AlarmClock.EXTRA_MINUTES, cal.get(Calendar.MINUTE))
+                            putExtra(AlarmClock.EXTRA_SKIP_UI, true)
+                        }
+                        startActivity(i)
+                        result.success(null)
+                    } catch (e: Exception) {
+                        result.error("alarm", e.message, null)
+                    }
+                }
+                "notifySchedule" -> {
+                    val id = call.argument<Int>("id") ?: 0
+                    val label = call.argument<String>("label") ?: ""
+                    val w = call.argument<Any>("when")
+                    val whenMs = (w as? Long) ?: (w as? Int)?.toLong() ?: 0L
+                    ReminderAlarm.schedule(this, id, label, whenMs)
+                    result.success(null)
+                }
+                "notifyCancel" -> {
+                    ReminderAlarm.cancel(this, call.argument<Int>("id") ?: 0)
+                    result.success(null)
+                }
+                "setKeepAlive" -> {
+                    if (call.argument<Boolean>("on") == true) startOngoing()
+                    else (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
+                        .cancel(ReminderAlarm.ONGOING_ID)
+                    result.success(null)
+                }
+                "calendarToday" -> {
+                    if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CALENDAR)
+                            != PackageManager.PERMISSION_GRANTED) {
+                        ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.READ_CALENDAR), 210)
+                        result.success(emptyList<Map<String, Any>>())
+                    } else {
+                        result.success(readCalendarToday())
+                    }
+                }
+                else -> result.notImplemented()
+            }
+        }
+
+        voice = VoiceChannel(this, m)
+
+        // SAF 文件导入导出：ACTION_CREATE_DOCUMENT / ACTION_OPEN_DOCUMENT
+        MethodChannel(m, "start/file").setMethodCallHandler { call, result ->
+            when (call.method) {
+                "export" -> {
+
+
+启序待办管理软件 V2.0 源程序鉴别材料 第 52 页（共 60 页）
+=================================================================
+                    pendingExportJson = call.argument<String>("json")
+                    pendingResult = result
+                    val name = call.argument<String>("name") ?: "start_data.json"
+                    try {
+                        val i = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                            addCategory(Intent.CATEGORY_OPENABLE)
+                            type = "application/json"
+                            putExtra(Intent.EXTRA_TITLE, name)
+                        }
+                        startActivityForResult(i, 9999)
+                    } catch (e: Exception) {
+                        pendingExportJson = null
+                        pendingResult = null
+                        result.error("export", e.message, null)
+                    }
+                }
+                "import" -> {
+                    pendingResult = result
+                    try {
+                        val i = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                            addCategory(Intent.CATEGORY_OPENABLE)
+                            type = "application/json"
+                        }
+                        startActivityForResult(i, 9998)
+                    } catch (e: Exception) {
+                        pendingResult = null
+                        result.error("import", e.message, null)
+                    }
+                }
+                "pickBootSound" -> {
+                    pendingResult = result
+                    try {
+                        val i = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                            addCategory(Intent.CATEGORY_OPENABLE)
+                            type = "audio/*"
+                        }
+                        startActivityForResult(i, 9997)
+                    } catch (e: Exception) {
+                        pendingResult = null
+                        result.error("pickBootSound", e.message, null)
+                    }
+                }
+                else -> result.notImplemented()
+            }
+        }
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        // Android 13+ 通知权限：进 App 即请求，拒绝只影响悬浮提醒，不影响其他功能。
+
+
+启序待办管理软件 V2.0 源程序鉴别材料 第 53 页（共 60 页）
+=================================================================
+        if (Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 2101)
+        }
+        try { startOngoing() } catch (_: Exception) {}
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (requestCode == 9999) {
+            // 导出：写文件
+            val json = pendingExportJson
+            val r = pendingResult
+            pendingExportJson = null
+            pendingResult = null
+            if (resultCode == RESULT_OK && data?.data != null && json != null) {
+                try {
+                    contentResolver.openOutputStream(data.data!!)?.use { os ->
+                        os.write(json.toByteArray(Charsets.UTF_8))
+                    }
+                    r?.success(true)
+                } catch (e: Exception) {
+                    r?.error("export", e.message, null)
+                }
+            } else {
+                r?.success(false)
+            }
+        } else if (requestCode == 9998) {
+            // 导入：读文件
+            val r = pendingResult
+            pendingResult = null
+            if (resultCode == RESULT_OK && data?.data != null) {
+                try {
+                    val text = contentResolver.openInputStream(data.data!!)?.use { ins ->
+                        ins.readBytes().toString(Charsets.UTF_8)
+                    }
+                    r?.success(text)
+                } catch (e: Exception) {
+                    r?.error("import", e.message, null)
+                }
+            } else {
+                r?.success(null)
+            }
+        } else if (requestCode == 9997) {
+            // 开机铃声：把所选音频复制到 filesDir/boot_sound.mp3
+            val r = pendingResult
+            pendingResult = null
+            var ok = false
+            if (resultCode == RESULT_OK && data?.data != null) {
+                try {
+
+
+启序待办管理软件 V2.0 源程序鉴别材料 第 54 页（共 60 页）
+=================================================================
+                    contentResolver.openInputStream(data.data!!)?.use { ins ->
+                        java.io.File(filesDir, "boot_sound.mp3").outputStream().use { os ->
+                            ins.copyTo(os)
+                        }
+                    }
+                    ok = true
+                } catch (_: Exception) {}
+            }
+            r?.success(ok)
+        }
+        super.onActivityResult(requestCode, resultCode, data)
+    }
+
+    private fun stopChime() {
+        chime?.let {
+            try { if (it.isPlaying) it.stop() } catch (_: Exception) {}
+            try { it.release() } catch (_: Exception) {}
+        }
+        chime = null
+    }
+
+    /** 自定义开机铃声：优先播放 filesDir/boot_sound.mp3；文件不存在时回退内置提示音。 */
+    private fun playBoot(f: java.io.File, volume: Float) {
+        stopBoot()
+        try {
+            boot = if (f.exists()) MediaPlayer().apply {
+                setDataSource(f.absolutePath)
+                setVolume(volume, volume)
+                setOnCompletionListener { mp -> try { mp.release() } catch (_: Exception) {}; boot = null }
+                prepare()
+                start()
+            } else MediaPlayer.create(this, R.raw.finish_chime)?.apply {
+                setVolume(volume, volume)
+                setOnCompletionListener { mp -> try { mp.release() } catch (_: Exception) {}; boot = null }
+                start()
+            }
+        } catch (_: Exception) {}
+    }
+
+    private fun stopBoot() {
+        boot?.let {
+            try { if (it.isPlaying) it.stop() } catch (_: Exception) {}
+            try { it.release() } catch (_: Exception) {}
+        }
+        boot = null
+    }
+
+    /**
+     * 专注滴答：AudioTrack 直接播放程序生成的一声短音（80ms，900Hz，指数衰减），
+     * 走媒体流——不依赖 ToneGenerator（不少 ROM 上系统流静音/勿扰时静默失败），
+
+
+启序待办管理软件 V2.0 源程序鉴别材料 第 55 页（共 60 页）
+=================================================================
+     * 设置里的提示音量线性生效。播完在标记回调里自释放。
+     */
+    private fun playTick(volume0to100: Int) {
+        if (volume0to100 <= 0) return
+        try {
+            val rate = 44100
+            val samples = (rate * 0.08).toInt()
+            val gain = volume0to100 / 100f * 0.9f
+            val pcm = ShortArray(samples)
+            for (i in 0 until samples) {
+                val t = i.toDouble() / rate
+                val env = Math.exp(-t / 0.035)
+                val v = Math.sin(2.0 * Math.PI * 900.0 * t) * env * gain
+                pcm[i] = (v * Short.MAX_VALUE).toInt().toShort()
+            }
+            val attrs = AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_MEDIA)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                .build()
+            val fmt = AudioFormat.Builder()
+                .setSampleRate(rate)
+                .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                .build()
+            val track = AudioTrack.Builder()
+                .setAudioAttributes(attrs)
+                .setAudioFormat(fmt)
+                .setBufferSizeInBytes(pcm.size * 2)
+                .setTransferMode(AudioTrack.MODE_STATIC)
+                .build()
+            track.write(pcm, 0, pcm.size)
+            track.setNotificationMarkerPosition(samples)
+            track.setPlaybackPositionUpdateListener(object : AudioTrack.OnPlaybackPositionUpdateListener {
+                override fun onMarkerReached(t: AudioTrack?) {
+                    try { t?.pause(); t?.release() } catch (_: Exception) {}
+                }
+                override fun onPeriodicNotification(t: AudioTrack?) {}
+            })
+            track.play()
+        } catch (_: Exception) {}
+    }
+
+    private fun vibrate(ms: Long) {
+        val v = getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+        if (Build.VERSION.SDK_INT >= 26) {
+            v.vibrate(VibrationEffect.createOneShot(ms, VibrationEffect.DEFAULT_AMPLITUDE))
+        } else {
+            @Suppress("DEPRECATION") v.vibrate(ms)
+        }
+    }
+
+
+启序待办管理软件 V2.0 源程序鉴别材料 第 56 页（共 60 页）
+=================================================================
+
+    /** 常驻保活通知：IMPORTANCE_MIN 静默、不可滑动清除，降低后台被系统误杀概率。 */
+    private fun startOngoing() {
+        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        nm.createNotificationChannel(
+            NotificationChannel(ReminderAlarm.CHANNEL_ONGOING, "常驻守护", NotificationManager.IMPORTANCE_MIN))
+        val pi = PendingIntent.getActivity(this, 0,
+            packageManager.getLaunchIntentForPackage(packageName),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        nm.notify(ReminderAlarm.ONGOING_ID, Notification.Builder(this, ReminderAlarm.CHANNEL_ONGOING)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentTitle("Start")
+            .setContentText("今日待办守护中")
+            .setOngoing(true)
+            .setContentIntent(pi)
+            .build())
+    }
+
+    /** 词级分词：BreakIterator ICU 词典，剥掉首尾标点，移植自老版 BigBangOverlay。 */
+    private fun segmentWords(text: String): List<String> {
+        val out = ArrayList<String>()
+        val bi = BreakIterator.getWordInstance(Locale.CHINA)
+        bi.setText(text)
+        var start = bi.first()
+        var end = bi.next()
+        while (end != BreakIterator.DONE) {
+            var w = text.substring(start, end).trim()
+                .trim('，', '。', '、', '；', '：', '！', '？', ',', '.', '!', '?', ';', ':',
+                    '"', '\'', '(', ')', '（', '）', '<', '>', '「', '」', '『', '』', '【', '】',
+                    '[', ']', '…', '—', '·')
+            if (w.isNotEmpty()) out.add(w)
+            start = end
+            end = bi.next()
+        }
+        return out
+    }
+
+    /** 读取今日手机日历事件（移植自老版 Cal.today）。返回 {id,title,begin,end,calName} 列表。 */
+    private fun readCalendarToday(): List<Map<String, Any>> {
+        val out = ArrayList<Map<String, Any>>()
+        val now = Calendar.getInstance()
+        val start = (now.clone() as Calendar).apply {
+            set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+        }
+        val end = (now.clone() as Calendar).apply {
+            set(Calendar.HOUR_OF_DAY, 23); set(Calendar.MINUTE, 59)
+            set(Calendar.SECOND, 59); set(Calendar.MILLISECOND, 999)
+        }
+        val proj = arrayOf(
+
+
+启序待办管理软件 V2.0 源程序鉴别材料 第 57 页（共 60 页）
+=================================================================
+            CalendarContract.Instances.EVENT_ID,
+            CalendarContract.Instances.TITLE,
+            CalendarContract.Instances.BEGIN,
+            CalendarContract.Instances.END
+        )
+        try {
+            val uri = CalendarContract.Instances.CONTENT_URI.buildUpon()
+                .appendPath(start.timeInMillis.toString())
+                .appendPath(end.timeInMillis.toString())
+                .build()
+            contentResolver.query(uri, proj, null, null,
+                "${CalendarContract.Instances.BEGIN} ASC")?.use { c ->
+                while (c.moveToNext()) {
+                    out.add(mapOf(
+                        "id" to c.getLong(0),
+                        "title" to (c.getString(1) ?: ""),
+                        "begin" to c.getLong(2),
+                        "end" to c.getLong(3),
+                        "calName" to ""
+                    ))
+                }
+            }
+        } catch (_: Exception) {
+        }
+        return out
+    }
+}
+
+/**
+ * 语音识别：Android 原生 SpeechRecognizer，离线优先（EXTRA_PREFER_OFFLINE），不联网。
+ * 事件流 type: ready|partial|final|end|error；text: 识别文本。
+ */
+class VoiceChannel(private val ctx: Context, messenger: io.flutter.plugin.common.BinaryMessenger) {
+    private var sr: SpeechRecognizer? = null
+    private var sink: EventChannel.EventSink? = null
+
+    init {
+        EventChannel(messenger, "start/voice/evt").setStreamHandler(object : EventChannel.StreamHandler {
+            override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+                sink = events
+            }
+            override fun onCancel(arguments: Any?) {
+                sink = null
+                stop()
+            }
+        })
+        MethodChannel(messenger, "start/voice").setMethodCallHandler { call, result ->
+            when (call.method) {
+                "start" -> { start(call.argument<Boolean>("online") == true); result.success(null) }
+                "stop" -> { stop(); result.success(null) }
+
+
+启序待办管理软件 V2.0 源程序鉴别材料 第 58 页（共 60 页）
+=================================================================
+                else -> result.notImplemented()
+            }
+        }
+    }
+
+    private fun micGranted(): Boolean =
+        ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+
+    fun start(online: Boolean = false) {
+        if (!micGranted()) {
+            val act = ctx as? MainActivity
+            act?.let {
+                ActivityCompat.requestPermissions(it, arrayOf(Manifest.permission.RECORD_AUDIO), 200)
+                sink?.success(mapOf("type" to "error", "text" to "需要麦克风权限"))
+                return
+            }
+        }
+        beginListening(online)
+    }
+
+    fun beginListening(online: Boolean = false) {
+        stop()
+        // 不检查 isRecognitionAvailable（它只查 Google 服务）。直接尝试启动，
+        // 系统枚举本机所有语音引擎（含厂商自研离线），不绑谷歌。
+        // online=false（默认）强制 PREFER_OFFLINE；用户在设置里显式开启在线识别才允许走网络。
+        try {
+        sr = SpeechRecognizer.createSpeechRecognizer(ctx).apply {
+            setRecognitionListener(object : RecognitionListener {
+                override fun onReadyForSpeech(p: Bundle?) { sink?.success(mapOf("type" to "ready")) }
+                override fun onBeginningOfSpeech() {}
+                override fun onRmsChanged(r: Float) { sink?.success(mapOf("type" to "rms", "text" to r.toString())) }
+                override fun onBufferReceived(b: ByteArray?) {}
+                override fun onEndOfSpeech() { sink?.success(mapOf("type" to "end")) }
+                override fun onError(e: Int) { sink?.success(mapOf("type" to "error", "text" to e.toString())) }
+                override fun onResults(b: Bundle?) {
+                    val list = b?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                    sink?.success(mapOf("type" to "final", "text" to (list?.firstOrNull() ?: "")))
+                }
+                override fun onPartialResults(b: Bundle?) {
+                    val list = b?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                    sink?.success(mapOf("type" to "partial", "text" to (list?.firstOrNull() ?: "")))
+                }
+                override fun onEvent(e: Int, b: Bundle?) {}
+            })
+        }
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "zh-CN")
+            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+            if (Build.VERSION.SDK_INT >= 23 && !online) putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
+
+
+启序待办管理软件 V2.0 源程序鉴别材料 第 59 页（共 60 页）
+=================================================================
+        }
+        sr?.startListening(intent)
+        } catch (e: Exception) {
+            sink?.success(mapOf("type" to "error", "text" to "本机无可用语音引擎，请在系统设置安装离线语音包"))
+        }
+    }
+
+    fun stop() {
+        try { sr?.stopListening() } catch (_: Exception) {}
+        try { sr?.destroy() } catch (_: Exception) {}
+        sr = null
+    }
+}
+package com.start.notes
+
+import android.Manifest
+import android.app.AlarmManager
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
+
+/**
+ * 到点提醒：AlarmManager 触发后弹出悬浮通知（大文本、点击回主界面、autoCancel）。
+ * 整体 try/catch 静默，绝不影响主流程。
+ */
+class ReminderReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        try {
+            if (Build.VERSION.SDK_INT >= 33 &&
+                context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
+                    != PackageManager.PERMISSION_GRANTED) return
+            val id = intent.getIntExtra("id", 0)
+            val label = intent.getStringExtra("label") ?: ""
+            val pi = PendingIntent.getActivity(context, id,
+                context.packageManager.getLaunchIntentForPackage(context.packageName),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+            val n = Notification.Builder(context, ReminderAlarm.CHANNEL_NOTIFY)
+                .setSmallIcon(R.mipmap.ic_launcher)
+                .setContentTitle(label)
+                .setContentText("到点了")
+                .setStyle(Notification.BigTextStyle().bigText("到点了"))
+                .setCategory(Notification.CATEGORY_REMINDER)
+                .setAutoCancel(true)
+                .setContentIntent(pi)
+
+
+启序待办管理软件 V2.0 源程序鉴别材料 第 60 页（共 60 页）
+=================================================================
+                .build()
+            (context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
+                .notify(id, n)
+        } catch (_: Exception) {
+        }
+    }
+}
+
+/**
+ * 闹钟/渠道公共逻辑：MainActivity（notifySchedule、notifyCancel、常驻通知）与
+ * BootReceiver（开机重排）共用，保证 PendingIntent 构造完全一致，cancel 才能命中。
+ */
+object ReminderAlarm {
+    const val CHANNEL_NOTIFY = "start_notify"
+    const val CHANNEL_ONGOING = "start_ongoing"
+    const val ONGOING_ID = 1001
+
+    fun pendingIntent(context: Context, id: Int, label: String): PendingIntent {
+        val i = Intent(context, ReminderReceiver::class.java).apply {
+            putExtra("id", id)
+            putExtra("label", label)
+        }
+        return PendingIntent.getBroadcast(context, id, i,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+    }
+
+    fun ensureChannel(context: Context) {
+        (context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
+            .createNotificationChannel(
+                NotificationChannel(CHANNEL_NOTIFY, "提醒", NotificationManager.IMPORTANCE_HIGH))
+    }
+
+    /** 注册到点闹钟；SDK>=31 无精确闹钟权限时降级为非精确 set。 */
+    fun schedule(context: Context, id: Int, label: String, whenMs: Long) {
+        ensureChannel(context)
+        val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        val pi = pendingIntent(context, id, label)
+        if (Build.VERSION.SDK_INT >= 31 && !am.canScheduleExactAlarms()) {
+            am.set(AlarmManager.RTC_WAKEUP, whenMs, pi)
+        } else {
+            am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, whenMs, pi)
+        }
+    }
+
+    fun cancel(context: Context, id: Int) {
+        val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        am.cancel(pendingIntent(context, id, ""))
+        (context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).cancel(id)
+    }
+}
+
+
